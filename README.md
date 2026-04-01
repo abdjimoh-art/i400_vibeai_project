@@ -1,5 +1,5 @@
 # IceTrack — Skating School Administration
- Indiana University I400 · Spring 2026**
+ ·Indiana University I400 · Spring 2026**
 
 ## Setup Instructions
 
