@@ -1,12 +1,27 @@
+import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
+import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
   const { email, password } = await request.json()
+  const cookieStore = await cookies()
 
-  const supabase = createClient(
+  const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          )
+        },
+      },
+    }
   )
 
   const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
@@ -30,10 +45,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Profile not found.' }, { status: 404 })
   }
 
-  return NextResponse.json({
-    role: profile.role,
-    full_name: profile.full_name,
-    access_token: data.session?.access_token,
-    refresh_token: data.session?.refresh_token,
-  })
+  return NextResponse.json({ role: profile.role, full_name: profile.full_name })
 }

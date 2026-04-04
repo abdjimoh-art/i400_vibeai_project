@@ -1,12 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -24,14 +21,12 @@ export default function LoginPage() {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Login failed.'); setLoading(false); return }
-      const supabase = createClient()
-      await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token })
       const redirectMap: Record<string, string> = {
         admin: '/admin/dashboard',
         instructor: '/instructor/dashboard',
         parent: '/parent/dashboard',
       }
-      router.push(redirectMap[data.role] || '/login')
+      window.location.href = redirectMap[data.role] || '/login'
     } catch {
       setError('Something went wrong. Please try again.')
       setLoading(false)
