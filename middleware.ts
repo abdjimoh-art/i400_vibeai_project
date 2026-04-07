@@ -1,6 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+const ROLE_ROUTES: Record<string, string> = {
+  '/admin': 'admin',
+  '/instructor': 'instructor',
+  '/parent': 'parent',
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -27,15 +33,29 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const protectedPaths = ['/admin', '/instructor', '/parent']
-  const isProtected = protectedPaths.some(path =>
-    request.nextUrl.pathname.startsWith(path)
-  )
+  for (const [prefix, requiredRole] of Object.entries(ROLE_ROUTES)) {
+    if (request.nextUrl.pathname.startsWith(prefix)) {
+      if (!user) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/login'
+        return NextResponse.redirect(url)
+      }
 
-  if (!user && isProtected) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+      // Enforce role — prevents a logged-in user from accessing another role's dashboard
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.role !== requiredRole) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/login'
+        return NextResponse.redirect(url)
+      }
+
+      break
+    }
   }
 
   return supabaseResponse

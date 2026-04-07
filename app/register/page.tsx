@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { createProfile } from './actions'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -39,13 +40,11 @@ export default function RegisterPage() {
       return
     }
 
-    // 2. Insert profile row
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({ id: data.user.id, full_name: fullName, role })
+    // 2. Insert profile row via Server Action (role is validated server-side)
+    const { error: profileError } = await createProfile(data.user.id, fullName, role)
 
     if (profileError) {
-      setError(profileError.message)
+      setError(profileError)
       setLoading(false)
       return
     }

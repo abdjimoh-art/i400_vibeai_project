@@ -36,10 +36,14 @@ create policy "Admins can view all profiles"
     )
   );
 
--- Allow insert during registration (called via service role in API route)
+-- Allow insert during registration — role restricted to non-admin values
+-- Prevents a malicious user from intercepting the request and setting role = 'admin'
 create policy "Allow profile creation on signup"
   on public.profiles for insert
-  with check (auth.uid() = id);
+  with check (
+    auth.uid() = id
+    AND role IN ('parent', 'instructor')
+  );
 
 
 -- ============================================================
@@ -136,6 +140,14 @@ create policy "Admins can manage enrollments"
 
 create policy "Parents can view their children enrollments"
   on public.enrollments for select
+  using (parent_id = auth.uid());
+
+create policy "Parents can enroll their children"
+  on public.enrollments for insert
+  with check (parent_id = auth.uid());
+
+create policy "Parents can withdraw their children"
+  on public.enrollments for delete
   using (parent_id = auth.uid());
 
 create policy "Instructors can view enrollments for their classes"

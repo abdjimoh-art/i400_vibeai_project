@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { upsertClass, deleteClass } from '@/app/admin/actions'
 
 type Profile = { id: string; full_name: string; role: string }
 type Level = { id: string; name: string; order_index: number }
@@ -159,18 +160,18 @@ export default function AdminDashboard() {
     setEditClassId(cls.id); setCfLevel(level?.id || ''); setCfInstructor(instructor?.id || '')
     setCfDay(cls.day_of_week); setCfTime(cls.time_slot); setCfLocation(cls.ice_location); setCfError(''); setShowClassForm(true)
   }
+
   async function handleClassSubmit(e: React.FormEvent) {
     e.preventDefault(); setCfError(''); setCfLoading(true)
-    const payload = { level_id: cfLevel, instructor_id: cfInstructor || null, day_of_week: cfDay, time_slot: cfTime, ice_location: cfLocation }
-    const { error } = editClassId
-      ? await supabase.from('classes').update(payload).eq('id', editClassId)
-      : await supabase.from('classes').insert(payload)
-    if (error) { setCfError(error.message); setCfLoading(false); return }
+    const result = await upsertClass({
+      levelId: cfLevel, instructorId: cfInstructor, day: cfDay, time: cfTime, location: cfLocation, editId: editClassId,
+    })
+    if (result.error) { setCfError(result.error); setCfLoading(false); return }
     setShowClassForm(false); setCfLoading(false); loadAll()
   }
   async function handleClassDelete(id: string) {
     if (!confirm('Delete this class?')) return
-    await supabase.from('classes').delete().eq('id', id); loadAll()
+    await deleteClass(id); loadAll()
   }
 
   // === SKATER HANDLERS ===
