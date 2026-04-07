@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { upsertClass, deleteClass } from '@/app/admin/actions'
 
 type Profile = { id: string; full_name: string; role: string }
 type Level = { id: string; name: string; order_index: number }
@@ -91,19 +92,16 @@ export default function AdminDashboard() {
     setFormError('')
     setFormLoading(true)
 
-    const payload = {
-      level_id: formLevelId,
-      instructor_id: formInstructorId || null,
-      day_of_week: formDay,
-      time_slot: formTime,
-      ice_location: formLocation,
-    }
+    const result = await upsertClass({
+      levelId: formLevelId,
+      instructorId: formInstructorId,
+      day: formDay,
+      time: formTime,
+      location: formLocation,
+      editId,
+    })
 
-    const { error } = editId
-      ? await supabase.from('classes').update(payload).eq('id', editId)
-      : await supabase.from('classes').insert(payload)
-
-    if (error) { setFormError(error.message); setFormLoading(false); return }
+    if (result.error) { setFormError(result.error); setFormLoading(false); return }
 
     setShowForm(false)
     setFormLoading(false)
@@ -112,7 +110,7 @@ export default function AdminDashboard() {
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this class? This will also remove all enrollments.')) return
-    await supabase.from('classes').delete().eq('id', id)
+    await deleteClass(id)
     loadAll()
   }
 
