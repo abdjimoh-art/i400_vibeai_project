@@ -11,6 +11,7 @@ export default function RegisterPage() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [role, setRole] = useState<'parent' | 'instructor'>('parent')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -19,6 +20,7 @@ export default function RegisterPage() {
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    if (password !== confirmPassword) { setError('Passwords do not match.'); return }
     setLoading(true)
 
     const supabase = createClient()
@@ -123,6 +125,14 @@ export default function RegisterPage() {
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+            <input type="password" required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter your password"
+              className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7B1113] ${confirmPassword && password !== confirmPassword ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
+            {confirmPassword && password !== confirmPassword && <p className="text-red-500 text-xs mt-1">Passwords do not match</p>}
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">I am a...</label>
             <div className="grid grid-cols-2 gap-3">
               {(['parent', 'instructor'] as const).map(r => (
@@ -144,7 +154,7 @@ export default function RegisterPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (!!confirmPassword && password !== confirmPassword)}
             className="w-full bg-[#7B1113] text-white py-2 rounded-lg font-semibold hover:bg-[#5e0d0f] transition disabled:opacity-50"
           >
             {loading ? 'Creating account...' : 'Register'}
