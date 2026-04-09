@@ -2,6 +2,23 @@
 
 This repository is a full-stack application built for an Ice Skating School.
 
+## Each student will add a branch with their own code 
+#remember to use **git pull** before starting to work to get other students work.
+They are a few duplicate features, in which case, for example rating, in which case you may add a button taking to rating1 or rating2 with the different feel.
+If necessary to add additional tables for your features, please make sure to add them also to the supabase.sql file.
+
+Remeber to add and admin user (after login in once) and use the password you see in canvas. user admin@admin.com
+
+List here your feature description, image and video (remember to add image and video to docs folder)
+
+## Features
+
+### Feature attendance
+
+
+
+## Technical details
+
 Stack:
 - Frontend: React + Vite (`apps/web`)
 - Backend: Express + TypeScript (`apps/api`)
