@@ -148,44 +148,44 @@ export default function InstructorDashboard() {
   async function handleLogout() { await supabase.auth.signOut(); router.push('/login') }
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-500">Loading...</p></div>
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center"><p className="text-slate-400">Loading…</p></div>
   )
 
   const selectedSkater = enrollments.find(e => e.skater_id === selectedSkaterId)?.skater
   const completedIds = new Set(completions.map(c => c.skill_id))
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-[#7B1113] text-white px-6 py-4 flex justify-between items-center shadow">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">⛸️</span>
-          <div>
-            <h1 className="font-bold text-lg leading-tight">IceTrack</h1>
-            <p className="text-xs text-red-200">Instructor Dashboard</p>
+    <div className="min-h-screen bg-slate-50">
+      <nav className="bg-[#7B1113] text-white px-6 py-3.5 flex justify-between items-center border-b border-[#6a0f10]">
+        <div className="flex items-center gap-2.5">
+          <span className="text-xl">⛸️</span>
+          <div className="flex items-baseline gap-2">
+            <span className="font-bold text-base tracking-tight">IceTrack</span>
+            <span className="text-xs text-red-200 font-normal">Instructor</span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm hidden sm:block">👤 {profile?.full_name}</span>
-          <button onClick={handleLogout} className="text-sm bg-white text-[#7B1113] px-3 py-1 rounded-lg font-medium hover:bg-red-50 transition">Logout</button>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-red-100 hidden sm:block">{profile?.full_name}</span>
+          <button onClick={handleLogout} className="text-sm bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg font-medium">Sign out</button>
         </div>
       </nav>
 
       <div className="max-w-6xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-800">Hello, {profile?.full_name} 👋</h2>
-          <p className="text-gray-500 text-sm mt-1">You are logged in as <span className="font-semibold text-[#7B1113]">Instructor</span></p>
+        <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+          <h2 className="text-base font-semibold text-slate-900">Hello, {profile?.full_name}</h2>
+          <p className="text-slate-500 text-sm mt-0.5">Frank Southern Ice Arena · <span className="text-[#7B1113] font-medium">Instructor</span></p>
         </div>
 
         {/* My Classes */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-3">My Classes</h3>
+        <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+          <h3 className="text-base font-semibold text-slate-900 mb-3">My Classes</h3>
           {classes.length === 0 ? (
-            <p className="text-gray-400 text-sm">You have no classes assigned.</p>
+            <p className="text-slate-400 text-sm">You have no classes assigned.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {classes.map(c => (
                 <button key={c.id} onClick={() => selectClass(c.id)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition border ${selectedClassId === c.id ? 'bg-[#7B1113] text-white border-[#7B1113]' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition border ${selectedClassId === c.id ? 'bg-[#7B1113] text-white border-[#7B1113]' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
                   {c.levels.name} — {c.day_of_week} {c.time_slot}
                 </button>
               ))}
@@ -210,7 +210,7 @@ export default function InstructorDashboard() {
 
             {/* ATTENDANCE VIEW */}
             {view === 'attendance' && (
-              <div className="bg-white rounded-xl shadow-sm p-6">
+              <div className="bg-white rounded-xl border border-slate-200 p-6">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-bold text-gray-800">Attendance Grid</h3>
                   <button onClick={addSessionDate} className="bg-[#7B1113] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#5e0d0f] transition">
@@ -263,7 +263,7 @@ export default function InstructorDashboard() {
 
             {/* SKILLS VIEW */}
             {view === 'skills' && selectedSkater && (
-              <div className="bg-white rounded-xl shadow-sm p-6">
+              <div className="bg-white rounded-xl border border-slate-200 p-6">
                 <div className="mb-4">
                   <h3 className="text-lg font-bold text-gray-800">
                     Skills — {selectedSkater.full_name}

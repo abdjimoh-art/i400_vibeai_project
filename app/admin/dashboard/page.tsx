@@ -280,32 +280,32 @@ export default function AdminDashboard() {
   const unenrolledSkaters = skaters.filter(s => !enrolledIds.has(s.id))
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-[#7B1113] text-white px-6 py-4 flex justify-between items-center shadow">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">⛸️</span>
-          <div>
-            <h1 className="font-bold text-lg leading-tight">IceTrack</h1>
-            <p className="text-xs text-red-200">Admin Dashboard</p>
+    <div className="min-h-screen bg-slate-50">
+      <nav className="bg-[#7B1113] text-white px-6 py-3.5 flex justify-between items-center border-b border-[#6a0f10]">
+        <div className="flex items-center gap-2.5">
+          <span className="text-xl">⛸️</span>
+          <div className="flex items-baseline gap-2">
+            <span className="font-bold text-base tracking-tight">IceTrack</span>
+            <span className="text-xs text-red-200 font-normal">Admin</span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm hidden sm:block">👤 {profile?.full_name}</span>
-          <button onClick={handleLogout} className="text-sm bg-white text-[#7B1113] px-3 py-1 rounded-lg font-medium hover:bg-red-50 transition">Logout</button>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-red-100 hidden sm:block">{profile?.full_name}</span>
+          <button onClick={handleLogout} className="text-sm bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg font-medium">Sign out</button>
         </div>
       </nav>
 
       <div className="max-w-6xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-800">Hello, {profile?.full_name} 👋</h2>
-          <p className="text-gray-500 text-sm mt-1">You are logged in as <span className="font-semibold text-[#7B1113]">Admin</span> — Frank Southern Ice Arena</p>
+        <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+          <h2 className="text-base font-semibold text-slate-900">Hello, {profile?.full_name}</h2>
+          <p className="text-slate-500 text-sm mt-0.5">Frank Southern Ice Arena · <span className="text-[#7B1113] font-medium">Admin</span></p>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-6 bg-white rounded-xl shadow-sm p-1">
+        <div className="flex gap-1 mb-6 bg-white rounded-xl border border-slate-200 p-1">
           {TABS.map(t => (
             <button key={t} onClick={() => { setTab(t); if (t === 'Enrollment' && enrollClassId) loadEnrollments(enrollClassId) }}
-              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${tab === t ? 'bg-[#7B1113] text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${tab === t ? 'bg-[#7B1113] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
               {t}
             </button>
           ))}
@@ -313,7 +313,7 @@ export default function AdminDashboard() {
 
         {/* CLASSES TAB */}
         {tab === 'Classes' && (
-          <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-lg font-bold text-gray-800">Classes</h3>
               <button onClick={openClassCreate} className="bg-[#7B1113] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#5e0d0f] transition">+ Create Class</button>
@@ -355,7 +355,7 @@ export default function AdminDashboard() {
 
         {/* SKATERS TAB */}
         {tab === 'Skaters' && (
-          <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-lg font-bold text-gray-800">Skaters ({skaters.length})</h3>
               <button onClick={openSkaterCreate} className="bg-[#7B1113] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#5e0d0f] transition">+ Add Skater</button>
@@ -394,7 +394,7 @@ export default function AdminDashboard() {
 
         {/* ENROLLMENT TAB */}
         {tab === 'Enrollment' && (
-          <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
             <h3 className="text-lg font-bold text-gray-800 mb-4">Enrollment</h3>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Select Class</label>
@@ -446,7 +446,7 @@ export default function AdminDashboard() {
         {/* SKATING SHOW TAB */}
         {tab === 'Skating Show' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
               <div className="flex justify-between items-center mb-5">
                 <h3 className="text-lg font-bold text-gray-800">Skating Shows</h3>
                 <button onClick={openShowCreate} className="bg-[#7B1113] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#5e0d0f] transition">+ Create Show</button>
