@@ -8,6 +8,6 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['**/__tests__/**/*.{ts,tsx}', '**/*.test.{ts,tsx}'],
-    exclude: ['node_modules', '.next'],
+    exclude: ['node_modules', '.next', '.claude'],
   },
 })
