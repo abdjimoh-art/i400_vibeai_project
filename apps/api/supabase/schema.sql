@@ -81,6 +81,121 @@ create policy "admins_insert_sessions" on public.sessions for insert to authenti
 create policy "admins_insert_classes" on public.classes for insert to authenticated with check (exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin'));
 create policy "parents_insert_enrollment" on public.class_enrollments for insert to authenticated with check (exists (select 1 from public.kids k where k.id = kid_id and k.parent_id = auth.uid()));
 
+-- ============================================================
+-- Skating Show feature (skatingshow-abdel)
+-- ============================================================
+drop table if exists public.show_group_kids cascade;
+drop table if exists public.show_practices cascade;
+drop table if exists public.show_groups cascade;
+drop table if exists public.skating_shows cascade;
+
+create table if not exists public.skating_shows (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  theme text,
+  show_date date not null,
+  show_time time,
+  location text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.show_groups (
+  id uuid primary key default gen_random_uuid(),
+  show_id uuid not null references public.skating_shows(id) on delete cascade,
+  name text not null,
+  show_half text not null default 'First Half',
+  level_filter text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.show_practices (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.show_groups(id) on delete cascade,
+  practice_date date not null,
+  start_time time not null,
+  end_time time not null,
+  label text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.show_group_kids (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.show_groups(id) on delete cascade,
+  kid_id uuid not null references public.kids(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (group_id, kid_id)
+);
+
+alter table public.skating_shows enable row level security;
+alter table public.show_groups enable row level security;
+alter table public.show_practices enable row level security;
+alter table public.show_group_kids enable row level security;
+
+create policy "allow_all_select" on public.skating_shows for select to authenticated using (true);
+create policy "allow_all_select" on public.show_groups for select to authenticated using (true);
+create policy "allow_all_select" on public.show_practices for select to authenticated using (true);
+create policy "allow_all_select" on public.show_group_kids for select to authenticated using (true);
+
+create policy "admins_all_skating_shows" on public.skating_shows
+  using (exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin'));
+create policy "admins_all_show_groups" on public.show_groups
+  using (exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin'));
+create policy "admins_all_show_practices" on public.show_practices
+  using (exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin'));
+create policy "admins_all_show_group_kids" on public.show_group_kids
+  using (exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin'));
+
+-- ============================================================
+-- Attendance & Skill Tracking (skilltracker-abdjimoh)
+-- ============================================================
+drop table if exists public.skill_completions cascade;
+drop table if exists public.skills cascade;
+drop table if exists public.attendance cascade;
+
+create table if not exists public.attendance (
+  id uuid primary key default gen_random_uuid(),
+  class_id uuid not null references public.classes(id) on delete cascade,
+  kid_id uuid not null references public.kids(id) on delete cascade,
+  session_date date not null,
+  present boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique (class_id, kid_id, session_date)
+);
+
+create table if not exists public.skills (
+  id uuid primary key default gen_random_uuid(),
+  level text not null,
+  name text not null,
+  passing_standard text,
+  order_index integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.skill_completions (
+  id uuid primary key default gen_random_uuid(),
+  kid_id uuid not null references public.kids(id) on delete cascade,
+  skill_id uuid not null references public.skills(id) on delete cascade,
+  completed_date date not null default current_date,
+  instructor_id uuid references public.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (kid_id, skill_id)
+);
+
+alter table public.attendance enable row level security;
+alter table public.skills enable row level security;
+alter table public.skill_completions enable row level security;
+
+create policy "allow_all_select" on public.attendance for select to authenticated using (true);
+create policy "allow_all_select" on public.skills for select to authenticated using (true);
+create policy "allow_all_select" on public.skill_completions for select to authenticated using (true);
+
+create policy "instructors_manage_attendance" on public.attendance
+  using (exists (select 1 from public.users u where u.id = auth.uid() and u.role in ('instructor', 'admin')));
+create policy "admins_manage_skills" on public.skills
+  using (exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin'));
+create policy "instructors_manage_skill_completions" on public.skill_completions
+  using (exists (select 1 from public.users u where u.id = auth.uid() and u.role in ('instructor', 'admin')));
+
 -- Insert admin with password frank
 do $$
 declare

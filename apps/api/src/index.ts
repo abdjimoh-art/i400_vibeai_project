@@ -517,6 +517,163 @@ app.get("/api/parent/enrollments", async (request, response) => {
   response.json(data);
 });
 
+// Instructor — classes assigned to this instructor
+app.get("/api/instructor/classes", async (request, response) => {
+  const user = await requireUser(request, response, ["instructor", "admin"]);
+  if (!user) return;
+
+  const { data, error } = await dbClient
+    .from("classes")
+    .select("*, sessions(*)")
+    .eq("instructor_id", user.id)
+    .order("day_of_week");
+
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  response.json(data ?? []);
+});
+
+// Instructor — kids enrolled in a specific class
+app.get("/api/instructor/classes/:classId/enrollments", async (request, response) => {
+  const user = await requireUser(request, response, ["instructor", "admin"]);
+  if (!user) return;
+
+  const { data, error } = await dbClient
+    .from("class_enrollments")
+    .select("id, kid_id, kids(id, name)")
+    .eq("class_id", request.params.classId);
+
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  response.json(data ?? []);
+});
+
+// Instructor — get attendance for a class on a date
+app.get("/api/instructor/attendance", async (request, response) => {
+  const user = await requireUser(request, response, ["instructor", "admin"]);
+  if (!user) return;
+
+  const { classId, date } = request.query as { classId?: string; date?: string };
+  if (!classId || !date) {
+    response.status(400).json({ error: "classId and date are required" });
+    return;
+  }
+
+  const { data, error } = await dbClient
+    .from("attendance")
+    .select("*")
+    .eq("class_id", classId)
+    .eq("session_date", date);
+
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  response.json(data ?? []);
+});
+
+// Instructor — upsert attendance record
+app.post("/api/instructor/attendance", async (request, response) => {
+  const user = await requireUser(request, response, ["instructor", "admin"]);
+  if (!user) return;
+
+  const attendanceSchema = z.object({
+    classId: z.string().uuid(),
+    kidId: z.string().uuid(),
+    date: z.string(),
+    present: z.boolean()
+  });
+
+  const parsed = attendanceSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: "Invalid payload" }); return; }
+
+  const { data, error } = await dbClient
+    .from("attendance")
+    .upsert({
+      class_id: parsed.data.classId,
+      kid_id: parsed.data.kidId,
+      session_date: parsed.data.date,
+      present: parsed.data.present
+    }, { onConflict: "class_id,kid_id,session_date" })
+    .select()
+    .single();
+
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  response.json(data);
+});
+
+// Skills — get by level (optional filter)
+app.get("/api/skills", async (request, response) => {
+  const user = await requireUser(request, response);
+  if (!user) return;
+
+  const { level } = request.query as { level?: string };
+  let query = dbClient.from("skills").select("*").order("order_index");
+  if (level) query = (query as any).eq("level", level);
+
+  const { data, error } = await query;
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  response.json(data ?? []);
+});
+
+// Instructor — get skill completions for all kids in a class
+app.get("/api/instructor/skill-completions/:classId", async (request, response) => {
+  const user = await requireUser(request, response, ["instructor", "admin"]);
+  if (!user) return;
+
+  const { data: enrollments, error: enrollError } = await dbClient
+    .from("class_enrollments")
+    .select("kid_id")
+    .eq("class_id", request.params.classId);
+
+  if (enrollError) { response.status(500).json({ error: enrollError.message }); return; }
+
+  const kidIds = (enrollments ?? []).map((e: any) => e.kid_id);
+  if (kidIds.length === 0) { response.json([]); return; }
+
+  const { data, error } = await dbClient
+    .from("skill_completions")
+    .select("*")
+    .in("kid_id", kidIds);
+
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  response.json(data ?? []);
+});
+
+// Instructor — mark or unmark a skill completion
+app.post("/api/instructor/skill-completions", async (request, response) => {
+  const user = await requireUser(request, response, ["instructor", "admin"]);
+  if (!user) return;
+
+  const completionSchema = z.object({
+    kidId: z.string().uuid(),
+    skillId: z.string().uuid(),
+    completed: z.boolean(),
+    date: z.string().optional()
+  });
+
+  const parsed = completionSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: "Invalid payload" }); return; }
+
+  if (parsed.data.completed) {
+    const { error } = await dbClient
+      .from("skill_completions")
+      .upsert({
+        kid_id: parsed.data.kidId,
+        skill_id: parsed.data.skillId,
+        completed_date: parsed.data.date ?? new Date().toISOString().split("T")[0],
+        instructor_id: user.id
+      }, { onConflict: "kid_id,skill_id" });
+
+    if (error) { response.status(500).json({ error: error.message }); return; }
+    response.json({ message: "Skill marked complete" });
+  } else {
+    const { error } = await dbClient
+      .from("skill_completions")
+      .delete()
+      .eq("kid_id", parsed.data.kidId)
+      .eq("skill_id", parsed.data.skillId);
+
+    if (error) { response.status(500).json({ error: error.message }); return; }
+    response.json({ message: "Skill completion removed" });
+  }
+});
+
 export { app };
 
 if (!process.env.VITEST) {
