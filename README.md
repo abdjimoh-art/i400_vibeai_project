@@ -13,7 +13,48 @@ List here your feature description, image and video (remember to add image and v
 
 ## Features
 
-### Feature attendance
+### Feature: Attendance Tracking & Skill Check-offs (skilltracker-abdjimoh)
+
+**Branch:** `skilltracker-abdjimoh` | **Author:** abdjimoh
+
+Instructors can now take attendance and sign off on individual skating skills for every skater in their assigned classes.
+
+#### What it does
+
+- **Attendance grid** — Instructor selects their class and a session date. Each enrolled skater appears as a card; clicking toggles between Present (green) and Absent. Changes are saved to the database instantly (optimistic UI with server persistence).
+
+- **Skill check-off matrix** — Below the attendance grid, all skills for the class level are listed as rows, with each enrolled skater as a column. Clicking a circle marks that skater as having passed the skill (green ✓) or removes the completion. Passing standards are shown under each skill name.
+
+- **Class & date selectors** — Instructors only see their own assigned classes. Attendance is tracked per date so historical records are preserved.
+
+#### How to use
+
+1. Log in as a user with the `instructor` role
+2. Select a class from the dropdown (only assigned classes appear)
+3. Pick a session date — today is pre-selected
+4. Toggle attendance for each skater
+5. Check off skills as skaters pass them during the session
+
+#### New API endpoints (Express backend)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/instructor/classes` | Classes assigned to the calling instructor |
+| `GET` | `/api/instructor/classes/:classId/enrollments` | Skaters enrolled in a class |
+| `GET` | `/api/instructor/attendance?classId=&date=` | Attendance records for a class/date |
+| `POST` | `/api/instructor/attendance` | Upsert an attendance record |
+| `GET` | `/api/skills?levelId=` | Skills for a given level |
+| `GET` | `/api/instructor/skill-completions/:classId` | Skill completions for all skaters in a class |
+| `POST` | `/api/instructor/skill-completions` | Mark or unmark a skill complete |
+| `GET` | `/api/levels` | All skating levels |
+
+#### Database tables used
+
+These tables already exist in the Supabase project:
+- `attendance_records` — `(class_id, skater_id, session_date, present)` — unique per class/skater/date
+- `skill_completions` — `(skater_id, skill_id, completed_date, instructor_id)` — unique per skater/skill
+- `skills` — `(level_id, name, passing_standard, order_index)` — pre-seeded for all 8 levels
+- `enrollments` — existing table linking skaters to classes
 
 
 
@@ -125,9 +166,19 @@ Parent:
 - `POST /api/parent/enrollments`
 - `DELETE /api/parent/enrollments/:classId/:kidId`
 
-Instructor & Public:
+Instructor:
+- `GET /api/instructor/classes`
+- `GET /api/instructor/classes/:classId/enrollments`
+- `GET /api/instructor/attendance?classId=&date=`
+- `POST /api/instructor/attendance`
+- `GET /api/instructor/skill-completions/:classId`
+- `POST /api/instructor/skill-completions`
+
+Public:
 - `GET /api/sessions`
 - `GET /api/classes`
+- `GET /api/levels`
+- `GET /api/skills?levelId=`
 
 ## 8. Production setup (Render API + Vercel Web)
 

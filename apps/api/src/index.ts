@@ -76,9 +76,10 @@ function readBearerToken(request: Request) {
   return token;
 }
 
+// Real schema uses "profiles" table (not "users")
 async function fetchUserRole(userId: string): Promise<UserRole | null> {
   const { data, error } = await dbClient
-    .from("users")
+    .from("profiles")
     .select("role")
     .eq("id", userId)
     .maybeSingle();
@@ -123,7 +124,8 @@ app.get("/health", (_request, response) => {
   response.json({ status: "ok" });
 });
 
-// Auth Endpoints
+// ─── Auth Endpoints ────────────────────────────────────────────────────────
+
 app.post("/api/auth/signup", async (request, response) => {
   const parsed = signupSchema.safeParse(request.body);
   if (!parsed.success) {
@@ -142,11 +144,12 @@ app.post("/api/auth/signup", async (request, response) => {
   }
 
   if (data.user?.id) {
-    const { error: userError } = await dbClient
-      .from("users")
-      .upsert({ id: data.user.id, role: "parent" }, { onConflict: "id" });
-    if (userError) {
-      response.status(500).json({ error: "Account created but user role could not be saved." });
+    const fullName = parsed.data.email.split("@")[0];
+    const { error: profileError } = await dbClient
+      .from("profiles")
+      .upsert({ id: data.user.id, role: "parent", full_name: fullName }, { onConflict: "id" });
+    if (profileError) {
+      response.status(500).json({ error: "Account created but profile could not be saved." });
       return;
     }
   }
@@ -196,20 +199,17 @@ app.get("/api/auth/me", async (request, response) => {
   response.json({ userId: user.id, role: user.role });
 });
 
-// Users handling (Admin)
+// ─── Admin: Users (profiles table) ────────────────────────────────────────
+
 app.get("/api/admin/users", async (request, response) => {
   const user = await requireUser(request, response, ["admin"]);
   if (!user) return;
 
   const { data, error } = await dbClient
-    .from("users")
-    .select("id, role, created_at");
+    .from("profiles")
+    .select("id, role, full_name, created_at");
 
-  if (error) {
-    response.status(500).json({ error: error.message });
-    return;
-  }
-
+  if (error) { response.status(500).json({ error: error.message }); return; }
   response.json(data);
 });
 
@@ -219,128 +219,93 @@ app.patch("/api/admin/users/:userId/role", async (request, response) => {
 
   const roleSchema = z.object({ role: z.enum(["admin", "instructor", "parent"]) });
   const parsed = roleSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "Invalid role" });
-    return;
-  }
+  if (!parsed.success) { response.status(400).json({ error: "Invalid role" }); return; }
 
   const { error } = await dbClient
-    .from("users")
+    .from("profiles")
     .update({ role: parsed.data.role })
     .eq("id", request.params.userId);
 
-  if (error) {
-    response.status(500).json({ error: error.message });
-    return;
-  }
-
+  if (error) { response.status(500).json({ error: error.message }); return; }
   response.json({ message: "Role updated" });
 });
 
-// Sessions
+// ─── Sessions (virtual — real schema uses season TEXT on classes) ──────────
+
 app.get("/api/sessions", async (request, response) => {
-  const { data, error } = await dbClient.from("sessions").select("*").order("start_date", { ascending: true });
-  if (error) {
-    response.status(500).json({ error: error.message });
-    return;
-  }
-  response.json(data);
+  const { data, error } = await dbClient.from("classes").select("season");
+  if (error) { response.status(500).json({ error: error.message }); return; }
+
+  const seasons = [...new Set((data ?? []).map((c: any) => c.season).filter(Boolean))];
+  const sessions = seasons.map((s: string) => ({
+    id: s,
+    name: s,
+    start_date: "2026-01-06",
+    end_date: "2026-06-30"
+  }));
+  response.json(sessions);
 });
 
 app.post("/api/admin/sessions", async (request, response) => {
   const user = await requireUser(request, response, ["admin"]);
   if (!user) return;
 
-  const sessionSchema = z.object({
-    name: z.string().min(1),
-    startDate: z.string(),
-    endDate: z.string()
-  });
-
+  const sessionSchema = z.object({ name: z.string().min(1), startDate: z.string(), endDate: z.string() });
   const parsed = sessionSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "Invalid payload" });
-    return;
-  }
+  if (!parsed.success) { response.status(400).json({ error: "Invalid payload" }); return; }
 
-  const { data, error } = await dbClient
-    .from("sessions")
-    .insert({
-      name: parsed.data.name,
-      start_date: parsed.data.startDate,
-      end_date: parsed.data.endDate
-    })
-    .select()
-    .single();
-
-  if (error) {
-    response.status(500).json({ error: error.message });
-    return;
-  }
-  response.status(201).json(data);
+  // No sessions table — return virtual session; season name is used as the ID
+  response.status(201).json({
+    id: parsed.data.name,
+    name: parsed.data.name,
+    start_date: parsed.data.startDate,
+    end_date: parsed.data.endDate
+  });
 });
 
-// Kids
-app.get("/api/parent/kids", async (request, response) => {
-  const user = await requireUser(request, response, ["parent"]);
-  if (!user) return;
+// ─── Levels ────────────────────────────────────────────────────────────────
 
-  const { data, error } = await dbClient.from("kids").select("*").eq("parent_id", user.id);
-  if (error) {
-    response.status(500).json({ error: error.message });
-    return;
-  }
-  response.json(data);
+app.get("/api/levels", async (request, response) => {
+  const { data, error } = await dbClient.from("levels").select("*").order("order_index");
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  response.json(data ?? []);
 });
 
-app.post("/api/parent/kids", async (request, response) => {
-  const user = await requireUser(request, response, ["parent"]);
-  if (!user) return;
+// ─── Classes ───────────────────────────────────────────────────────────────
 
-  const kidSchema = z.object({ name: z.string().min(1) });
-  const parsed = kidSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "Invalid payload" });
-    return;
-  }
-
-  const { data, error } = await dbClient
-    .from("kids")
-    .insert({ parent_id: user.id, name: parsed.data.name })
-    .select()
-    .single();
-
-  if (error) {
-    response.status(500).json({ error: error.message });
-    return;
-  }
-  response.status(201).json(data);
-});
-
-// Classes
 app.get("/api/classes", async (request, response) => {
   const { data, error } = await dbClient
     .from("classes")
-    .select("*, sessions(*)"); // Simplified relation
-  if (error) {
-    response.status(500).json({ error: error.message });
-    return;
-  }
+    .select("*, levels(id, name)");
 
-  const { data: allRegistrations, error: regError } = await dbClient.from("class_enrollments").select("class_id");
-  if (regError) {
-    response.status(500).json({ error: regError.message });
-    return;
-  }
+  if (error) { response.status(500).json({ error: error.message }); return; }
 
-  const registrationCounts = new Map<string, number>();
-  for (const reg of allRegistrations ?? []) {
-    registrationCounts.set(reg.class_id, (registrationCounts.get(reg.class_id) ?? 0) + 1);
+  const { data: allEnrollments, error: enrollError } = await dbClient
+    .from("enrollments")
+    .select("class_id");
+
+  if (enrollError) { response.status(500).json({ error: enrollError.message }); return; }
+
+  const countMap = new Map<string, number>();
+  for (const e of allEnrollments ?? []) {
+    countMap.set(e.class_id, (countMap.get(e.class_id) ?? 0) + 1);
   }
 
   const payload = (data ?? []).map((cls: any) => ({
-    ...cls,
-    registrationCount: registrationCounts.get(cls.id) ?? 0
+    id: cls.id,
+    session_id: cls.season,
+    instructor_id: cls.instructor_id,
+    level: cls.levels?.name ?? cls.level_id,
+    level_id: cls.level_id,
+    level_name: cls.levels?.name ?? "",
+    skill_set: cls.levels?.name ?? "",
+    time: cls.time_slot,
+    day_of_week: cls.day_of_week,
+    capacity: 20,
+    season: cls.season,
+    ice_location: cls.ice_location,
+    registrationCount: countMap.get(cls.id) ?? 0,
+    sessions: { id: cls.season, name: cls.season }
   }));
 
   response.json(payload);
@@ -351,39 +316,39 @@ app.post("/api/admin/classes", async (request, response) => {
   if (!user) return;
 
   const classSchema = z.object({
-    sessionId: z.string().uuid(),
+    sessionId: z.string().min(1),          // season name used as ID
+    levelId: z.string().uuid().optional(), // preferred
+    level: z.string().optional(),          // fallback: resolve by name
     instructorId: z.string().uuid().nullable().optional(),
-    level: z.string().min(1),
-    skillSet: z.string().min(1),
     time: z.string().min(1),
     dayOfWeek: z.string().min(1),
-    capacity: z.number().int().min(1)
+    capacity: z.number().int().min(1).optional()
   });
 
   const parsed = classSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "Invalid payload", details: parsed.error });
-    return;
+  if (!parsed.success) { response.status(400).json({ error: "Invalid payload", details: parsed.error }); return; }
+
+  let levelId = parsed.data.levelId;
+  if (!levelId && parsed.data.level) {
+    const { data: lvl } = await dbClient.from("levels").select("id").eq("name", parsed.data.level).maybeSingle();
+    levelId = lvl?.id;
   }
+  if (!levelId) { response.status(400).json({ error: "Valid levelId or level name required" }); return; }
 
   const { data, error } = await dbClient
     .from("classes")
     .insert({
-      session_id: parsed.data.sessionId,
-      instructor_id: parsed.data.instructorId,
-      level: parsed.data.level,
-      skill_set: parsed.data.skillSet,
-      time: parsed.data.time,
+      level_id: levelId,
+      instructor_id: parsed.data.instructorId ?? null,
+      time_slot: parsed.data.time,
       day_of_week: parsed.data.dayOfWeek,
-      capacity: parsed.data.capacity
+      season: parsed.data.sessionId,
+      ice_location: "Zone A"
     })
     .select()
     .single();
 
-  if (error) {
-    response.status(500).json({ error: error.message });
-    return;
-  }
+  if (error) { response.status(500).json({ error: error.message }); return; }
   response.status(201).json(data);
 });
 
@@ -393,10 +358,7 @@ app.patch("/api/admin/classes/:id/instructor", async (request, response) => {
 
   const patchSchema = z.object({ instructorId: z.string().uuid().nullable() });
   const parsed = patchSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "Invalid payload" });
-    return;
-  }
+  if (!parsed.success) { response.status(400).json({ error: "Invalid payload" }); return; }
 
   const { data, error } = await dbClient
     .from("classes")
@@ -405,64 +367,68 @@ app.patch("/api/admin/classes/:id/instructor", async (request, response) => {
     .select()
     .single();
 
-  if (error) {
-    response.status(500).json({ error: error.message });
-    return;
-  }
+  if (error) { response.status(500).json({ error: error.message }); return; }
   response.json(data);
 });
 
-// Enrollments
+// ─── Parent: Skaters (kids) ────────────────────────────────────────────────
+
+app.get("/api/parent/kids", async (request, response) => {
+  const user = await requireUser(request, response, ["parent"]);
+  if (!user) return;
+
+  const { data, error } = await dbClient
+    .from("skaters")
+    .select("id, full_name")
+    .eq("parent_id", user.id);
+
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  // Normalize: return name field so frontend doesn't need changing
+  response.json((data ?? []).map((s: any) => ({ id: s.id, name: s.full_name })));
+});
+
+app.post("/api/parent/kids", async (request, response) => {
+  const user = await requireUser(request, response, ["parent"]);
+  if (!user) return;
+
+  const kidSchema = z.object({ name: z.string().min(1) });
+  const parsed = kidSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: "Invalid payload" }); return; }
+
+  // Get parent's level_id (default to first level)
+  const { data: firstLevel } = await dbClient.from("levels").select("id").order("order_index").limit(1).maybeSingle();
+
+  const { data, error } = await dbClient
+    .from("skaters")
+    .insert({ parent_id: user.id, full_name: parsed.data.name, level_id: firstLevel?.id ?? null })
+    .select()
+    .single();
+
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  response.status(201).json({ id: data.id, name: data.full_name });
+});
+
+// ─── Parent: Enrollments ───────────────────────────────────────────────────
+
 app.post("/api/parent/enrollments", async (request, response) => {
   const user = await requireUser(request, response, ["parent"]);
   if (!user) return;
 
-  const rollSchema = z.object({
-    classId: z.string().uuid(),
-    kidId: z.string().uuid()
-  });
-
+  const rollSchema = z.object({ classId: z.string().uuid(), kidId: z.string().uuid() });
   const parsed = rollSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "Invalid payload" });
-    return;
-  }
+  if (!parsed.success) { response.status(400).json({ error: "Invalid payload" }); return; }
 
-  // Ensure kid belongs to parent
-  const { data: kid, error: kidError } = await dbClient.from("kids").select("id").eq("id", parsed.data.kidId).eq("parent_id", user.id).maybeSingle();
-  if (kidError || !kid) {
-    response.status(403).json({ error: "Kid not found or access denied" });
-    return;
-  }
-
-  // Check capacity
-  const { data: cls, error: clsError } = await dbClient.from("classes").select("capacity").eq("id", parsed.data.classId).maybeSingle();
-  if (clsError || !cls) {
-    response.status(404).json({ error: "Class not found" });
-    return;
-  }
-
-  const { count, error: countError } = await dbClient.from("class_enrollments").select("id", { count: "exact", head: true }).eq("class_id", parsed.data.classId);
-  if (countError) {
-    response.status(500).json({ error: countError.message });
-    return;
-  }
-
-  if ((count ?? 0) >= cls.capacity) {
-    response.status(409).json({ error: "This class is full." });
-    return;
-  }
+  // Ensure skater belongs to parent
+  const { data: skater, error: skaterError } = await dbClient
+    .from("skaters").select("id").eq("id", parsed.data.kidId).eq("parent_id", user.id).maybeSingle();
+  if (skaterError || !skater) { response.status(403).json({ error: "Skater not found or access denied" }); return; }
 
   const { error: insertError } = await dbClient
-    .from("class_enrollments")
-    .insert({ class_id: parsed.data.classId, kid_id: parsed.data.kidId });
+    .from("enrollments")
+    .insert({ class_id: parsed.data.classId, skater_id: parsed.data.kidId });
 
-  if (insertError) {
-    response.status(500).json({ error: insertError.message });
-    return;
-  }
-
-  response.status(201).json({ message: "Registration successful." });
+  if (insertError) { response.status(500).json({ error: insertError.message }); return; }
+  response.status(201).json({ message: "Enrollment successful." });
 });
 
 app.delete("/api/parent/enrollments/:classId/:kidId", async (request, response) => {
@@ -471,103 +437,113 @@ app.delete("/api/parent/enrollments/:classId/:kidId", async (request, response) 
 
   const { classId, kidId } = request.params;
 
-  // Ensure kid belongs to parent
-  const { data: kid, error: kidError } = await dbClient.from("kids").select("id").eq("id", kidId).eq("parent_id", user.id).maybeSingle();
-  if (kidError || !kid) {
-    response.status(403).json({ error: "Kid not found or access denied" });
-    return;
-  }
+  const { data: skater, error: skaterError } = await dbClient
+    .from("skaters").select("id").eq("id", kidId).eq("parent_id", user.id).maybeSingle();
+  if (skaterError || !skater) { response.status(403).json({ error: "Skater not found or access denied" }); return; }
 
-  const { error: deleteError } = await dbClient
-    .from("class_enrollments")
+  const { error } = await dbClient
+    .from("enrollments")
     .delete()
     .eq("class_id", classId)
-    .eq("kid_id", kidId);
+    .eq("skater_id", kidId);
 
-  if (deleteError) {
-    response.status(500).json({ error: deleteError.message });
-    return;
-  }
-
-  response.status(200).json({ message: "Unregistration successful." });
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  response.status(200).json({ message: "Unenrollment successful." });
 });
 
 app.get("/api/parent/enrollments", async (request, response) => {
   const user = await requireUser(request, response, ["parent"]);
   if (!user) return;
 
-  const { data: kids, error: kidsError } = await dbClient.from("kids").select("id").eq("parent_id", user.id);
-  if (kidsError) {
-    response.status(500).json({ error: kidsError.message });
-    return;
-  }
+  const { data: skaters, error: skatersError } = await dbClient
+    .from("skaters").select("id").eq("parent_id", user.id);
+  if (skatersError) { response.status(500).json({ error: skatersError.message }); return; }
 
-  const kidIds = (kids ?? []).map((k: any) => k.id);
-  if (kidIds.length === 0) {
-    response.json([]);
-    return;
-  }
+  const skaterIds = (skaters ?? []).map((s: any) => s.id);
+  if (skaterIds.length === 0) { response.json([]); return; }
 
-  const { data, error } = await dbClient.from("class_enrollments").select("*").in("kid_id", kidIds);
-  if (error) {
-    response.status(500).json({ error: error.message });
-    return;
-  }
-  
-  response.json(data);
+  const { data, error } = await dbClient
+    .from("enrollments")
+    .select("*")
+    .in("skater_id", skaterIds);
+
+  if (error) { response.status(500).json({ error: error.message }); return; }
+  // Normalize kid_id so frontend keeps working
+  response.json((data ?? []).map((e: any) => ({ ...e, kid_id: e.skater_id })));
 });
 
-// Instructor — classes assigned to this instructor
+// ─── Instructor: Classes ───────────────────────────────────────────────────
+
 app.get("/api/instructor/classes", async (request, response) => {
   const user = await requireUser(request, response, ["instructor", "admin"]);
   if (!user) return;
 
   const { data, error } = await dbClient
     .from("classes")
-    .select("*, sessions(*)")
+    .select("*, levels(id, name)")
     .eq("instructor_id", user.id)
     .order("day_of_week");
 
   if (error) { response.status(500).json({ error: error.message }); return; }
-  response.json(data ?? []);
+
+  const payload = (data ?? []).map((cls: any) => ({
+    id: cls.id,
+    level_id: cls.level_id,
+    level: cls.levels?.name ?? "",
+    level_name: cls.levels?.name ?? "",
+    instructor_id: cls.instructor_id,
+    day_of_week: cls.day_of_week,
+    time: cls.time_slot,
+    season: cls.season,
+    ice_location: cls.ice_location
+  }));
+
+  response.json(payload);
 });
 
-// Instructor — kids enrolled in a specific class
+// ─── Instructor: Enrolled skaters for a class ──────────────────────────────
+
 app.get("/api/instructor/classes/:classId/enrollments", async (request, response) => {
   const user = await requireUser(request, response, ["instructor", "admin"]);
   if (!user) return;
 
   const { data, error } = await dbClient
-    .from("class_enrollments")
-    .select("id, kid_id, kids(id, name)")
+    .from("enrollments")
+    .select("id, skater_id, skaters(id, full_name)")
     .eq("class_id", request.params.classId);
 
   if (error) { response.status(500).json({ error: error.message }); return; }
-  response.json(data ?? []);
+
+  // Normalize to {id, kid_id, kids: {id, name}} for frontend compatibility
+  const payload = (data ?? []).map((e: any) => ({
+    id: e.id,
+    kid_id: e.skater_id,
+    kids: { id: e.skaters?.id, name: e.skaters?.full_name }
+  }));
+
+  response.json(payload);
 });
 
-// Instructor — get attendance for a class on a date
+// ─── Instructor: Attendance ────────────────────────────────────────────────
+
 app.get("/api/instructor/attendance", async (request, response) => {
   const user = await requireUser(request, response, ["instructor", "admin"]);
   if (!user) return;
 
   const { classId, date } = request.query as { classId?: string; date?: string };
-  if (!classId || !date) {
-    response.status(400).json({ error: "classId and date are required" });
-    return;
-  }
+  if (!classId || !date) { response.status(400).json({ error: "classId and date are required" }); return; }
 
   const { data, error } = await dbClient
-    .from("attendance")
+    .from("attendance_records")
     .select("*")
     .eq("class_id", classId)
     .eq("session_date", date);
 
   if (error) { response.status(500).json({ error: error.message }); return; }
-  response.json(data ?? []);
+  // Normalize skater_id → kid_id
+  response.json((data ?? []).map((a: any) => ({ ...a, kid_id: a.skater_id })));
 });
 
-// Instructor — upsert attendance record
 app.post("/api/instructor/attendance", async (request, response) => {
   const user = await requireUser(request, response, ["instructor", "admin"]);
   if (!user) return;
@@ -583,59 +559,62 @@ app.post("/api/instructor/attendance", async (request, response) => {
   if (!parsed.success) { response.status(400).json({ error: "Invalid payload" }); return; }
 
   const { data, error } = await dbClient
-    .from("attendance")
+    .from("attendance_records")
     .upsert({
       class_id: parsed.data.classId,
-      kid_id: parsed.data.kidId,
+      skater_id: parsed.data.kidId,
       session_date: parsed.data.date,
       present: parsed.data.present
-    }, { onConflict: "class_id,kid_id,session_date" })
+    }, { onConflict: "class_id,skater_id,session_date" })
     .select()
     .single();
 
   if (error) { response.status(500).json({ error: error.message }); return; }
-  response.json(data);
+  response.json({ ...data, kid_id: data.skater_id });
 });
 
-// Skills — get by level (optional filter)
+// ─── Skills ────────────────────────────────────────────────────────────────
+
 app.get("/api/skills", async (request, response) => {
   const user = await requireUser(request, response);
   if (!user) return;
 
-  const { level } = request.query as { level?: string };
+  const { levelId } = request.query as { levelId?: string };
+
   let query = dbClient.from("skills").select("*").order("order_index");
-  if (level) query = (query as any).eq("level", level);
+  if (levelId) query = (query as any).eq("level_id", levelId);
 
   const { data, error } = await query;
   if (error) { response.status(500).json({ error: error.message }); return; }
   response.json(data ?? []);
 });
 
-// Instructor — get skill completions for all kids in a class
+// ─── Instructor: Skill completions ────────────────────────────────────────
+
 app.get("/api/instructor/skill-completions/:classId", async (request, response) => {
   const user = await requireUser(request, response, ["instructor", "admin"]);
   if (!user) return;
 
   const { data: enrollments, error: enrollError } = await dbClient
-    .from("class_enrollments")
-    .select("kid_id")
+    .from("enrollments")
+    .select("skater_id")
     .eq("class_id", request.params.classId);
 
   if (enrollError) { response.status(500).json({ error: enrollError.message }); return; }
 
-  const kidIds = (enrollments ?? []).map((e: any) => e.kid_id);
-  if (kidIds.length === 0) { response.json([]); return; }
+  const skaterIds = (enrollments ?? []).map((e: any) => e.skater_id);
+  if (skaterIds.length === 0) { response.json([]); return; }
 
   const { data, error } = await dbClient
     .from("skill_completions")
     .select("*")
-    .in("kid_id", kidIds);
+    .in("skater_id", skaterIds);
 
   if (error) { response.status(500).json({ error: error.message }); return; }
-  response.json(data ?? []);
+  // Normalize skater_id → kid_id
+  response.json((data ?? []).map((sc: any) => ({ ...sc, kid_id: sc.skater_id })));
 });
 
-// Instructor — mark or unmark a skill completion
 app.post("/api/instructor/skill-completions", async (request, response) => {
   const user = await requireUser(request, response, ["instructor", "admin"]);
   if (!user) return;
@@ -654,11 +633,11 @@ app.post("/api/instructor/skill-completions", async (request, response) => {
     const { error } = await dbClient
       .from("skill_completions")
       .upsert({
-        kid_id: parsed.data.kidId,
+        skater_id: parsed.data.kidId,
         skill_id: parsed.data.skillId,
         completed_date: parsed.data.date ?? new Date().toISOString().split("T")[0],
         instructor_id: user.id
-      }, { onConflict: "kid_id,skill_id" });
+      }, { onConflict: "skater_id,skill_id" });
 
     if (error) { response.status(500).json({ error: error.message }); return; }
     response.json({ message: "Skill marked complete" });
@@ -666,7 +645,7 @@ app.post("/api/instructor/skill-completions", async (request, response) => {
     const { error } = await dbClient
       .from("skill_completions")
       .delete()
-      .eq("kid_id", parsed.data.kidId)
+      .eq("skater_id", parsed.data.kidId)
       .eq("skill_id", parsed.data.skillId);
 
     if (error) { response.status(500).json({ error: error.message }); return; }

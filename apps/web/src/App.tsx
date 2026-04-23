@@ -2,6 +2,7 @@ import { FormEvent, useMemo, useState } from "react";
 
 type AuthMode = "signup" | "login";
 type UserRole = "admin" | "instructor" | "parent";
+type Level = { id: string; name: string; order_index: number };
 
 type Kid = { id: string; name: string };
 type Session = { id: string; name: string; start_date: string; end_date: string };
@@ -10,6 +11,8 @@ type IceClass = {
   session_id: string;
   instructor_id: string | null;
   level: string;
+  level_id?: string;
+  level_name?: string;
   skill_set: string;
   time: string;
   day_of_week: string;
@@ -70,6 +73,8 @@ export default function App() {
   const [classes, setClasses] = useState<IceClass[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [enrollments, setEnrollments] = useState<{ id: string; class_id: string; kid_id: string }[]>([]);
+  const [levels, setLevels] = useState<Level[]>([]);
+  const [newClassLevelId, setNewClassLevelId] = useState("");
 
   // Instructor-specific state
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -106,14 +111,16 @@ export default function App() {
 
   async function loadAdminData() {
     try {
-      const [uRes, sRes, cRes] = await Promise.all([
+      const [uRes, sRes, cRes, lRes] = await Promise.all([
         authFetch("/api/admin/users"),
         authFetch("/api/sessions"),
         authFetch("/api/classes"),
+        authFetch("/api/levels"),
       ]);
       setUsers(await parseApiJson<User[]>(uRes));
       setSessions(await parseApiJson<Session[]>(sRes));
       setClasses(await parseApiJson<IceClass[]>(cRes));
+      setLevels(await parseApiJson<Level[]>(lRes));
     } catch (e) {
       console.error(e);
       setStatus("Error loading admin data");
@@ -166,8 +173,9 @@ export default function App() {
       setAttendance(attendanceData.map((a: any) => ({ kid_id: a.kid_id, present: a.present })));
 
       if (cls) {
+        const levelParam = cls.level_id ? `levelId=${cls.level_id}` : `levelId=`;
         const [sRes, scRes] = await Promise.all([
-          authFetch(`/api/skills?level=${encodeURIComponent(cls.level)}`),
+          authFetch(`/api/skills?${levelParam}`),
           authFetch(`/api/instructor/skill-completions/${classId}`),
         ]);
         setSkills(await parseApiJson<Skill[]>(sRes));
@@ -322,15 +330,14 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: newClassSessionId,
-          level: newClassLevel,
-          skillSet: newClassSkillSet,
+          levelId: newClassLevelId,
           time: newClassTime,
           dayOfWeek: newClassDay,
           capacity: Number(newClassCapacity)
         })
       });
       if (res.ok) {
-        setNewClassSessionId(""); setNewClassLevel(""); setNewClassSkillSet("");
+        setNewClassSessionId(""); setNewClassLevelId(""); setNewClassSkillSet("");
         setNewClassTime(""); setNewClassDay("");
         loadDashboard("admin");
       }
@@ -483,8 +490,10 @@ export default function App() {
                        <option value="">Select Session...</option>
                        {sessions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                      </select>
-                     <input type="text" placeholder="Level" value={newClassLevel} onChange={e => setNewClassLevel(e.target.value)} required />
-                     <input type="text" placeholder="Skill Set" value={newClassSkillSet} onChange={e => setNewClassSkillSet(e.target.value)} required />
+                     <select value={newClassLevelId} onChange={e => setNewClassLevelId(e.target.value)} required>
+                       <option value="">Select Level...</option>
+                       {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                     </select>
                      <input type="text" placeholder="Day of Week" value={newClassDay} onChange={e => setNewClassDay(e.target.value)} required />
                      <input type="text" placeholder="Time" value={newClassTime} onChange={e => setNewClassTime(e.target.value)} required />
                      <input type="number" placeholder="Capacity" value={newClassCapacity} onChange={e => setNewClassCapacity(e.target.value)} required />
