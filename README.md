@@ -17,6 +17,10 @@ List here your feature description, image and video (remember to add image and v
 
 **Branch:** `skilltracker-abdjimoh` | **Author:** abdjimoh
 
+> 🎥 **Demo Video:** *(add link after recording — place video in `docs/videos/` and update this link)*
+>
+> 📸 **Screenshot:** *(add screenshot after recording — place image in `docs/images/` and update this link)*
+
 Instructors can now take attendance and sign off on individual skating skills for every skater in their assigned classes.
 
 #### What it does
@@ -201,3 +205,9 @@ Set environment variable: `VITE_API_BASE_URL=https://YOUR-RENDER-API.onrender.co
 
 1. Open `https://YOUR-RENDER-API.onrender.com/health` and confirm `{"status":"ok"}`.
 2. Open your Vercel URL and test sign-in with the seed admin credentials.
+
+---
+
+## AI Acknowledgement
+
+*The `skilltracker-abdjimoh` feature (attendance tracking and skill check-offs) was developed for the class I400-Vibe and AI Programming, Spring 2026, Indiana University Bloomington. Code was written with the assistance of Claude Code (claude.ai/code) as part of the course's AI-assisted development curriculum.*
