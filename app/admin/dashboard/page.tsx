@@ -8,8 +8,15 @@ import { upsertClass, deleteClass } from '@/app/admin/actions'
 type Profile = { id: string; full_name: string; role: string }
 type Level = { id: string; name: string; order_index: number }
 type ClassRow = {
-  id: string; day_of_week: string; time_slot: string; ice_location: string; season: string
+  id: string
+  level_id?: string
+  day_of_week: string; time_slot: string; ice_location: string; season: string
   levels: { name: string }; profiles: { full_name: string } | null
+}
+type ClassInstructorAssignment = {
+  class_id: string
+  instructor_id: string
+  profiles: { id: string; full_name: string } | null
 }
 type Skater = {
   id: string; full_name: string
@@ -34,18 +41,20 @@ type Practice = {
 }
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
-const TABS = ['Classes', 'Skaters', 'Enrollment', 'Skating Show'] as const
+const TABS = ['Overview', 'Classes', 'Skaters', 'Enrollment', 'Instructors', 'Skating Show', 'Reports'] as const
 type Tab = typeof TABS[number]
 
+function tabNavLabel(t: Tab): string {
+  return t === 'Skating Show' ? 'Show' : t
+}
+
+type OverviewLevelBar = { level_id: string; name: string; enrolled: number; cap: number }
+type OverviewShowcase = {
+  id: string; name: string; theme: string | null; show_date: string; show_time: string | null
+  group_count: number; practice_count: number
+}
+
 // — SVG Icons —
-const IconSnowflake = () => (
-  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/>
-    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/>
-    <polyline points="9 5 12 2 15 5"/><polyline points="9 19 12 22 15 19"/>
-    <polyline points="5 9 2 12 5 15"/><polyline points="19 9 22 12 19 15"/>
-  </svg>
-)
 const IconSignOut = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
@@ -74,6 +83,11 @@ const IconX = () => (
     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
   </svg>
 )
+const IconSearch = () => (
+  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+    <circle cx="11" cy="11" r="7" /><path d="M21 21 L 16 16" />
+  </svg>
+)
 
 // — Helpers —
 function getLevelBadge(name: string) {
@@ -96,20 +110,23 @@ function getZoneBadge(zone: string) {
   return 'bg-teal-50 text-teal-700 border-teal-200'
 }
 
-const inputCls = "w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#7B1113]/20 focus:border-[#7B1113] focus:bg-white"
-const labelCls = "block text-sm font-semibold text-slate-700 mb-1.5"
+const inputCls = "w-full border border-[var(--hairline)] bg-[var(--surface)] rounded-[var(--r-sm)] px-3 py-2.5 text-sm text-[var(--ink)] placeholder-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--ice)]/[0.13] focus:border-[var(--ice)]"
+const labelCls = "block text-xs font-medium text-[var(--ink-soft)] mb-1.5"
 
 export default function AdminDashboard() {
   const router = useRouter()
   const supabase = createClient()
 
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [tab, setTab] = useState<Tab>('Classes')
+  const [tab, setTab] = useState<Tab>('Overview')
   const [loading, setLoading] = useState(true)
+  const [overview, setOverview] = useState<{ levelBars: OverviewLevelBar[]; showcase: OverviewShowcase | null } | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [levels, setLevels] = useState<Level[]>([])
   const [instructors, setInstructors] = useState<Profile[]>([])
+  const [classInstructorMap, setClassInstructorMap] = useState<Record<string, Profile[]>>({})
   const [parents, setParents] = useState<Profile[]>([])
   const [skaters, setSkaters] = useState<Skater[]>([])
   const [shows, setShows] = useState<Show[]>([])
@@ -117,7 +134,7 @@ export default function AdminDashboard() {
   const [showClassForm, setShowClassForm] = useState(false)
   const [editClassId, setEditClassId] = useState<string | null>(null)
   const [cfLevel, setCfLevel] = useState('')
-  const [cfInstructor, setCfInstructor] = useState('')
+  const [cfInstructors, setCfInstructors] = useState<string[]>([])
   const [cfDay, setCfDay] = useState('Monday')
   const [cfTime, setCfTime] = useState('')
   const [cfLocation, setCfLocation] = useState('Zone A')
@@ -137,6 +154,8 @@ export default function AdminDashboard() {
   const [enrollLoading, setEnrollLoading] = useState(false)
 
   const [showShowForm, setShowShowForm] = useState(false)
+  const [showView, setShowView] = useState<'list' | 'calendar'>('list')
+  const [calendarShowId, setCalendarShowId] = useState('')
   const [editShowId, setEditShowId] = useState<string | null>(null)
   const [shName, setShName] = useState('')
   const [shTheme, setShTheme] = useState('')
@@ -161,8 +180,6 @@ export default function AdminDashboard() {
   const [prEnd, setPrEnd] = useState('')
   const [prLabel, setPrLabel] = useState('')
   const [prError, setPrError] = useState('')
-
-  useEffect(() => { loadAll() }, [])
 
   async function loadAll() {
     setLoading(true)
@@ -190,10 +207,38 @@ export default function AdminDashboard() {
     if (skatersRes.ok) setSkaters(await skatersRes.json())
 
     const showsRes = await fetch('/api/skating-shows')
-    if (showsRes.ok) setShows(await showsRes.json())
+    if (showsRes.ok) {
+      const loadedShows: Show[] = await showsRes.json()
+      setShows(loadedShows)
+      if (!calendarShowId && loadedShows.length > 0) {
+        setCalendarShowId(loadedShows[0].id)
+      }
+    }
+
+    const classInstRes = await fetch('/api/class-instructors')
+    if (classInstRes.ok) {
+      const links: ClassInstructorAssignment[] = await classInstRes.json()
+      const grouped: Record<string, Profile[]> = {}
+      for (const link of links) {
+        if (!link.profiles) continue
+        if (!grouped[link.class_id]) grouped[link.class_id] = []
+        grouped[link.class_id].push({ id: link.profiles.id, full_name: link.profiles.full_name, role: 'instructor' })
+      }
+      setClassInstructorMap(grouped)
+    } else {
+      setClassInstructorMap({})
+    }
+
+    const ovRes = await fetch('/api/admin/overview')
+    if (ovRes.ok) setOverview(await ovRes.json())
 
     setLoading(false)
   }
+
+  useEffect(() => {
+    void loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial dashboard load only
+  }, [])
 
   async function loadEnrollments(classId: string) {
     setEnrollLoading(true)
@@ -203,19 +248,21 @@ export default function AdminDashboard() {
   }
 
   function openClassCreate() {
-    setEditClassId(null); setCfLevel(levels[0]?.id || ''); setCfInstructor('')
+    setEditClassId(null); setCfLevel(levels[0]?.id || ''); setCfInstructors(instructors[0]?.id ? [instructors[0].id] : [])
     setCfDay('Monday'); setCfTime('9:00 AM'); setCfLocation('Zone A'); setCfError(''); setShowClassForm(true)
   }
   function openClassEdit(cls: ClassRow) {
     const level = levels.find(l => l.name === cls.levels.name)
     const instructor = instructors.find(i => i.full_name === cls.profiles?.full_name)
-    setEditClassId(cls.id); setCfLevel(level?.id || ''); setCfInstructor(instructor?.id || '')
+    const mapped = classInstructorMap[cls.id]?.map(i => i.id) || []
+    const fallback = instructor?.id ? [instructor.id] : (instructors[0]?.id ? [instructors[0].id] : [])
+    setEditClassId(cls.id); setCfLevel(level?.id || ''); setCfInstructors(mapped.length > 0 ? mapped : fallback)
     setCfDay(cls.day_of_week); setCfTime(cls.time_slot); setCfLocation(cls.ice_location); setCfError(''); setShowClassForm(true)
   }
   async function handleClassSubmit(e: React.FormEvent) {
     e.preventDefault(); setCfError(''); setCfLoading(true)
     const result = await upsertClass({
-      levelId: cfLevel, instructorId: cfInstructor, day: cfDay, time: cfTime, location: cfLocation, editId: editClassId,
+      levelId: cfLevel, instructorIds: cfInstructors, day: cfDay, time: cfTime, location: cfLocation, editId: editClassId,
     })
     if (result.error) { setCfError(result.error); setCfLoading(false); return }
     setShowClassForm(false); setCfLoading(false); loadAll()
@@ -319,123 +366,297 @@ export default function AdminDashboard() {
   async function handleLogout() { await supabase.auth.signOut(); router.push('/login') }
 
   if (loading) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--paper)' }}>
       <div className="flex flex-col items-center gap-4">
-        <svg className="animate-spin w-8 h-8 text-[#7B1113]" fill="none" viewBox="0 0 24 24" aria-hidden>
+        <svg className="animate-spin w-8 h-8" style={{ color: 'var(--ice)' }} fill="none" viewBox="0 0 24 24" aria-hidden>
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
         </svg>
-        <p className="text-slate-500 text-sm font-medium">Loading dashboard…</p>
+        <p style={{ color: 'var(--muted)', fontSize: 13 }}>Loading dashboard…</p>
       </div>
     </div>
   )
 
   const enrolledIds = new Set(enrollments.map(e => e.skater_id))
   const unenrolledSkaters = skaters.filter(s => !enrolledIds.has(s.id))
+  const totalEnrollments = overview?.levelBars.reduce((acc, r) => acc + r.enrolled, 0) ?? 0
+  const adminInitials = (profile?.full_name || 'A')
+    .split(/\s+/)
+    .map(w => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
+  const calendarShow = shows.find((s) => s.id === calendarShowId) || shows[0] || null
+  const calendarPracticeEvents = (calendarShow?.groups || []).flatMap((g) =>
+    (g.practices || []).map((p) => ({
+      ...p,
+      group_name: g.name,
+    }))
+  )
+  const calendarBaseDate = calendarPracticeEvents[0]?.practice_date || calendarShow?.show_date || null
+  const calendarMonth = calendarBaseDate ? new Date(`${calendarBaseDate}T12:00:00`) : null
+  const monthStart = calendarMonth ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1) : null
+  const monthEnd = calendarMonth ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0) : null
+  const monthName = calendarMonth ? calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : ''
+  const leadingMondayOffset = monthStart ? (monthStart.getDay() + 6) % 7 : 0
+  const daysInMonth = monthEnd?.getDate() || 0
+  const eventsByDate = new Map<string, Array<{ start: string; end: string; label: string; groupName: string }>>()
+  for (const p of calendarPracticeEvents) {
+    if (!eventsByDate.has(p.practice_date)) eventsByDate.set(p.practice_date, [])
+    eventsByDate.get(p.practice_date)?.push({
+      start: p.start_time,
+      end: p.end_time,
+      label: p.label || 'Practice',
+      groupName: p.group_name,
+    })
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Nav */}
-      <nav className="bg-[#7B1113] text-white px-6 py-4 flex justify-between items-center shadow-md">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-white/15 rounded-lg flex items-center justify-center flex-shrink-0">
-            <IconSnowflake />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="font-bold text-base tracking-tight">IceTrack</span>
-            <span className="text-xs text-red-200 font-medium px-2 py-0.5 bg-white/10 rounded-full">Admin</span>
-          </div>
+    <div className="min-h-screen" style={{ background: 'var(--paper)' }}>
+      {/* Nav — hi-fi: tabs + search + avatar */}
+      <nav className="px-5 md:px-7 py-3 flex flex-wrap items-center gap-3 md:gap-5" style={{ background: 'var(--surface)', borderBottom: '1px solid var(--hairline)' }}>
+        <span className="inline-flex items-center gap-2">
+          <svg width={20} height={20} viewBox="0 0 28 28" fill="none" aria-hidden>
+            <path d="M5 19 Q 14 22, 23 19" stroke="var(--ink)" strokeWidth="2" strokeLinecap="round" />
+            <path d="M9 19 L 12 8 L 14 8 L 13 19" stroke="var(--ink)" strokeWidth="1.6" fill="none" strokeLinejoin="round" />
+            <circle cx="6" cy="20" r="1.2" fill="var(--ink)" /><circle cx="22" cy="20" r="1.2" fill="var(--ink)" />
+          </svg>
+          <span className="font-display" style={{ fontSize: 19, fontWeight: 500, letterSpacing: '-0.02em' }}>Ice<span style={{ fontStyle: 'italic', fontWeight: 400 }}>Track</span></span>
+        </span>
+        <span className="pill pill-crimson">Admin</span>
+        <div className="flex flex-wrap gap-0.5 md:ml-2">
+          {TABS.map(t => (
+            <button key={t} onClick={() => { setTab(t); if (t === 'Enrollment' && enrollClassId) void loadEnrollments(enrollClassId) }}
+              className="cursor-pointer" style={{
+                padding: '8px 12px', fontSize: 13, fontWeight: tab === t ? 500 : 400,
+                color: tab === t ? 'var(--ink)' : 'var(--muted)', borderRadius: 'var(--r-sm)',
+                background: tab === t ? 'var(--surface2)' : 'transparent', border: 'none',
+              }}>
+              {tabNavLabel(t)}
+            </button>
+          ))}
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-red-100 font-medium hidden sm:block">{profile?.full_name}</span>
-          <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg font-medium cursor-pointer">
-            <IconSignOut />
-            <span className="hidden sm:inline">Sign out</span>
+        <div className="ml-auto flex flex-wrap items-center gap-2 md:gap-3">
+          <div className="hidden sm:flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs" style={{ border: '1px solid var(--hairline)', background: 'var(--surface2)', color: 'var(--muted)', minWidth: 190 }}>
+            <IconSearch />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search · ⌘K"
+              style={{
+                width: '100%',
+                minWidth: 0,
+                border: 'none',
+                outline: 'none',
+                background: 'transparent',
+                color: 'var(--ink-soft)',
+                fontSize: 12,
+                fontFamily: '"Geist Mono","JetBrains Mono",ui-monospace,monospace',
+                letterSpacing: '0.04em',
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-center text-xs font-semibold flex-shrink-0" style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--ice-soft)', color: 'var(--ice-deep)', border: '1px solid var(--hairline)' }} aria-hidden>
+            {adminInitials}
+          </div>
+          <span className="hidden sm:inline" style={{ fontSize: 13, fontWeight: 500 }}>{profile?.full_name}</span>
+          <button type="button" onClick={handleLogout} className="flex items-center gap-1.5 cursor-pointer" style={{ padding: '5px 10px', fontSize: 12, borderRadius: 'var(--r-sm)', border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink-soft)' }}>
+            <IconSignOut /> Sign out
           </button>
         </div>
       </nav>
 
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Welcome card */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-slate-500 font-medium">Welcome back</p>
-            <h2 className="text-xl font-bold text-slate-900 mt-0.5">{profile?.full_name}</h2>
-            <p className="text-sm text-slate-500 mt-1">Frank Southern Ice Arena</p>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-50 text-[#7B1113] border border-red-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#7B1113]" />
-              Administrator
-            </span>
-            <div className="flex gap-3 text-xs text-slate-500">
-              <span><span className="font-semibold text-slate-800">{classes.length}</span> classes</span>
-              <span><span className="font-semibold text-slate-800">{skaters.length}</span> skaters</span>
-              <span><span className="font-semibold text-slate-800">{shows.length}</span> shows</span>
+      <div className="max-w-6xl mx-auto px-5 md:px-7 py-7">
+        {tab === 'Overview' ? (
+          <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" style={{ marginBottom: 22 }}>
+            <div>
+              <div className="eyebrow">Spring 2026 · Frank Southern Ice Arena</div>
+              <h1 className="font-display" style={{ fontSize: 40, fontWeight: 400, marginTop: 6, letterSpacing: '-0.02em' }}>
+                At a <span style={{ fontStyle: 'italic' }}>glance.</span>
+              </h1>
+              <p style={{ fontSize: 14, color: 'var(--muted)', marginTop: 4 }}>
+                {classes.length} classes · {skaters.length} skaters · {instructors.length} instructors · {shows.length} show{shows.length !== 1 ? 's' : ''}
+              </p>
             </div>
-          </div>
-        </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="cursor-pointer rounded-md text-sm font-medium" style={{ padding: '9px 14px', border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink-soft)' }} title="Export is planned for a future release">
+                Export
+              </button>
+              <button type="button" onClick={openClassCreate} className="it-btn-primary inline-flex items-center gap-2 cursor-pointer rounded-md text-sm font-medium shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)]" style={{ padding: '9px 14px' }}>
+                <IconPlus />
+                New class
+              </button>
+            </div>
+          </header>
+        ) : (
+          <header style={{ marginBottom: 22 }}>
+            <div className="eyebrow">Spring 2026 · Frank Southern Ice Arena</div>
+            <h1 className="font-display" style={{ fontSize: 28, fontWeight: 500, marginTop: 6, letterSpacing: '-0.02em' }}>
+              {tabNavLabel(tab)}
+            </h1>
+            <p style={{ fontSize: 14, color: 'var(--muted)', marginTop: 4 }}>
+              {classes.length} classes · {skaters.length} skaters · {instructors.length} instructors
+            </p>
+          </header>
+        )}
 
-        {/* Tabs */}
-        <div className="flex gap-1 mb-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-1.5">
-          {TABS.map(t => (
-            <button key={t} onClick={() => { setTab(t); if (t === 'Enrollment' && enrollClassId) loadEnrollments(enrollClassId) }}
-              className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-semibold transition cursor-pointer ${tab === t ? 'bg-[#7B1113] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
-              {t}
-            </button>
-          ))}
-        </div>
+        {/* OVERVIEW — hi-fi KPI + enrollment by level + rail */}
+        {tab === 'Overview' && (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
+              {[
+                { label: 'Active classes', n: String(classes.length), sub: 'On the schedule', tone: 'ice' as const },
+                { label: 'Skaters enrolled', n: String(skaters.length), sub: `${parents.length} parent accounts`, tone: 'ink' as const },
+                { label: 'Instructors', n: String(instructors.length), sub: 'Profiles with instructor role', tone: 'ink' as const },
+                { label: 'Total enrollments', n: String(totalEnrollments), sub: 'Seatings across all classes', tone: 'spring' as const },
+              ].map((s) => (
+                <button type="button" key={s.label} onClick={() => { if (s.label === 'Active classes') setTab('Classes'); if (s.label === 'Skaters enrolled') setTab('Skaters'); if (s.label === 'Instructors') setTab('Instructors'); if (s.label === 'Total enrollments') setTab('Enrollment') }}
+                  className="card p-4 md:p-5 text-left cursor-pointer hover:shadow-md transition-shadow w-full">
+                  <div className="eyebrow mb-2">{s.label}</div>
+                  <div className="font-display" style={{
+                    fontSize: 34, fontWeight: 400, letterSpacing: '-0.02em',
+                    color: s.tone === 'ice' ? 'var(--ice-deep)' : s.tone === 'spring' ? 'var(--spring)' : 'var(--ink)',
+                    lineHeight: 1,
+                  }}>{s.n}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>{s.sub}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4">
+              <div className="card" style={{ padding: 22 }}>
+                <div className="flex justify-between items-baseline mb-4 md:mb-5 flex-wrap gap-2">
+                  <div>
+                    <h3 className="font-display" style={{ fontSize: 18, fontWeight: 500 }}>Enrollment by level</h3>
+                    <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>Filled vs estimated capacity (8 seats per class section)</p>
+                  </div>
+                  <span className="pill pill-ice" style={{ fontSize: 11 }}>Spring 2026</span>
+                </div>
+                {(overview?.levelBars.length ? overview.levelBars : levels.map(l => ({ level_id: l.id, name: l.name, enrolled: 0, cap: 8 }))).map((r) => {
+                  const pct = Math.min(1, r.enrolled / r.cap)
+                  const full = r.enrolled >= r.cap && r.cap > 0
+                  return (
+                    <div key={r.level_id} className="grid grid-cols-[minmax(0,88px)_1fr_52px] items-center gap-3 py-2" style={{ borderTop: '1px solid var(--hairline-soft)' }}>
+                      <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{r.name}</span>
+                      <div className="relative h-[22px] rounded-[var(--r-sm)] overflow-hidden" style={{ background: 'var(--hairline-soft)' }}>
+                        <div className="h-full rounded-[var(--r-sm)] transition-[width] duration-300" style={{ width: `${pct * 100}%`, background: full ? 'var(--crimson)' : 'var(--ice)' }} />
+                        {full ? (
+                          <span className="font-mono absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-white">FULL</span>
+                        ) : null}
+                      </div>
+                      <span className="font-mono text-right text-xs font-medium" style={{ color: full ? 'var(--crimson)' : 'var(--ink)' }}>{r.enrolled}/{r.cap}</span>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <div className="card" style={{ padding: 18 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 500, marginBottom: 14 }}>Recent activity</h3>
+                  {[
+                    { who: 'System', what: 'Use Classes and Enrollment tabs for live changes', when: 'Today', hue: 210 },
+                    { who: 'Tip', what: 'Run supabase-reset.sql after a blank database', when: 'Setup', hue: 150 },
+                    { who: 'Show', what: overview?.showcase ? `${overview.showcase.name} on deck` : 'Create a spring show when ready', when: 'Season', hue: 290 },
+                    { who: profile?.full_name || 'Admin', what: 'Signed in to IceTrack admin', when: 'Session', hue: 250 },
+                  ].map((a, i) => (
+                    <div key={i} className="flex gap-3 py-2 items-start" style={{ borderBottom: i < 3 ? '1px solid var(--hairline-soft)' : 'none' }}>
+                      <div className="flex items-center justify-center text-[10px] font-bold flex-shrink-0" style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--surface2)', color: `hsl(${a.hue} 28% 36%)`, border: '1px solid var(--hairline)' }}>
+                        {a.who.charAt(0)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12 }}><strong style={{ fontWeight: 600 }}>{a.who}</strong> {a.what}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{a.when}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="card overflow-hidden" style={{ background: 'linear-gradient(155deg, var(--ice-deep), var(--ice))', color: '#fff' }}>
+                  <div style={{ padding: 18 }}>
+                    <div className="eyebrow" style={{ color: 'rgba(255,255,255,0.75)' }}>Spring showcase</div>
+                    {overview?.showcase ? (
+                      <>
+                        <h3 className="font-display" style={{ fontSize: 22, color: '#fff', fontWeight: 400, marginTop: 4 }}>
+                          {overview.showcase.show_date} · <span style={{ fontStyle: 'italic' }}>{overview.showcase.theme || overview.showcase.name}</span>
+                        </h3>
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <div><div className="font-mono" style={{ fontSize: 22 }}>{overview.showcase.group_count}</div><div style={{ fontSize: 11, opacity: 0.85 }}>groups</div></div>
+                          <div><div className="font-mono" style={{ fontSize: 22 }}>{overview.showcase.practice_count}</div><div style={{ fontSize: 11, opacity: 0.85 }}>practices</div></div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="font-display" style={{ fontSize: 22, color: '#fff', fontWeight: 400, marginTop: 4 }}>No show scheduled</h3>
+                        <p style={{ fontSize: 12, opacity: 0.85, marginTop: 8 }}>Add a show from the Show tab when your season is ready.</p>
+                      </>
+                    )}
+                    <button type="button" onClick={() => setTab('Skating Show')} className="mt-4 inline-flex items-center gap-2 cursor-pointer rounded-md text-sm font-medium" style={{ padding: '8px 14px', background: '#fff', color: 'var(--ice-deep)', border: '1px solid #fff' }}>
+                      Manage <span aria-hidden>→</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* CLASSES TAB */}
         {tab === 'Classes' && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="flex justify-between items-center px-6 py-5 border-b border-slate-100">
+          <div className="card overflow-hidden">
+            <div className="flex justify-between items-center px-6 py-5" style={{ borderBottom: '1px solid var(--hairline-soft)' }}>
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Classes</h3>
-                <p className="text-sm text-slate-500 mt-0.5">{classes.length} class{classes.length !== 1 ? 'es' : ''} scheduled</p>
+                <h3 className="font-display" style={{ fontSize: 22, fontWeight: 500 }}>Classes</h3>
+                <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{classes.length} class{classes.length !== 1 ? 'es' : ''} scheduled</p>
               </div>
-              <button onClick={openClassCreate} className="flex items-center gap-2 bg-[#7B1113] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#6a0f10] active:bg-[#5e0d0f] transition shadow-sm cursor-pointer">
+              <button onClick={openClassCreate} className="it-btn-primary inline-flex items-center gap-2 cursor-pointer rounded-md text-sm font-medium shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)]" style={{ padding: '9px 14px' }}>
                 <IconPlus />
-                Create Class
+                New class
               </button>
             </div>
             {classes.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-                  <svg className="w-7 h-7 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <div style={{ width: 56, height: 56, borderRadius: 'var(--r-md)', background: 'var(--ice-soft)', color: 'var(--ice-deep)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                  <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>
                     <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
                   </svg>
                 </div>
-                <p className="text-slate-800 font-semibold">No classes yet</p>
-                <p className="text-slate-500 text-sm mt-1">Create your first class to get started.</p>
+                <p className="font-display" style={{ fontSize: 18, fontWeight: 500 }}>No classes yet</p>
+                <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>Create your first class to get started.</p>
+                <p style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 14, maxWidth: 420, lineHeight: 1.5 }}>
+                  If the whole rink feels empty after a database reset, run <span className="font-mono" style={{ fontSize: 11 }}>i400_vibeai_project/supabase-reset.sql</span> in the Supabase SQL editor to reload levels, skills, classes, show schedule, and demo skaters — or use <span className="font-mono" style={{ fontSize: 11 }}>supabase-seed-demo-data.sql</span> for a lighter refill.
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/60">
-                      <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Level</th>
-                      <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Instructor</th>
-                      <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Day</th>
-                      <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Time</th>
-                      <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Location</th>
-                      <th className="text-right px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                    <tr style={{ borderBottom: '1px solid var(--hairline-soft)', background: 'var(--surface2)' }}>
+                      <th className="eyebrow text-left px-6 py-3.5">Level</th>
+                      <th className="eyebrow text-left px-6 py-3.5">Instructor</th>
+                      <th className="eyebrow text-left px-6 py-3.5">Day</th>
+                      <th className="eyebrow text-left px-6 py-3.5">Time</th>
+                      <th className="eyebrow text-left px-6 py-3.5">Location</th>
+                      <th className="eyebrow text-right px-6 py-3.5">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {classes.map((cls) => (
-                      <tr key={cls.id} className="hover:bg-slate-50 transition-colors group">
+                  <tbody style={{ borderTop: '1px solid var(--hairline-soft)' }}>
+                    {classes.map((cls, idx) => (
+                      <tr key={cls.id} className="group transition-colors" style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--hairline-soft)' }}>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${getLevelBadge(cls.levels.name)}`}>
                             {cls.levels.name}
                           </span>
                         </td>
-                        <td className="px-6 py-4 font-medium text-slate-800">
-                          {cls.profiles?.full_name || <span className="text-slate-400 italic text-xs">Unassigned</span>}
+                        <td className="px-6 py-4" style={{ color: 'var(--ink)', fontWeight: 500 }}>
+                          {(() => {
+                            const names = classInstructorMap[cls.id]?.map((p) => p.full_name) || []
+                            if (names.length > 0) return names.join(', ')
+                            return cls.profiles?.full_name || <span style={{ color: 'var(--muted)', fontStyle: 'italic', fontSize: 12 }}>Unassigned</span>
+                          })()}
                         </td>
-                        <td className="px-6 py-4 text-slate-600">{cls.day_of_week}</td>
-                        <td className="px-6 py-4 text-slate-700 font-medium">{cls.time_slot}</td>
+                        <td className="px-6 py-4" style={{ color: 'var(--ink-soft)' }}>{cls.day_of_week}</td>
+                        <td className="px-6 py-4 font-mono" style={{ color: 'var(--ink)', fontSize: 13 }}>{cls.time_slot}</td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${getZoneBadge(cls.ice_location)}`}>
                             {cls.ice_location}
@@ -443,10 +664,10 @@ export default function AdminDashboard() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => openClassEdit(cls)} className="flex items-center gap-1.5 text-slate-500 hover:text-[#7B1113] hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer">
+                            <button onClick={() => openClassEdit(cls)} className="flex items-center gap-1.5 hover:bg-[var(--ice-soft)] px-2.5 py-1.5 rounded-md text-xs font-medium cursor-pointer" style={{ color: 'var(--ink-soft)' }}>
                               <IconEdit /> Edit
                             </button>
-                            <button onClick={() => handleClassDelete(cls.id)} className="flex items-center gap-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer">
+                            <button onClick={() => handleClassDelete(cls.id)} className="flex items-center gap-1.5 hover:bg-[var(--rust-soft)] px-2.5 py-1.5 rounded-md text-xs font-medium cursor-pointer" style={{ color: 'var(--muted)' }}>
                               <IconTrash /> Delete
                             </button>
                           </div>
@@ -462,48 +683,51 @@ export default function AdminDashboard() {
 
         {/* SKATERS TAB */}
         {tab === 'Skaters' && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="flex justify-between items-center px-6 py-5 border-b border-slate-100">
+          <div className="card overflow-hidden">
+            <div className="flex justify-between items-center px-6 py-5" style={{ borderBottom: '1px solid var(--hairline-soft)' }}>
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Skaters</h3>
-                <p className="text-sm text-slate-500 mt-0.5">{skaters.length} skater{skaters.length !== 1 ? 's' : ''} registered</p>
+                <h3 className="font-display" style={{ fontSize: 22, fontWeight: 500 }}>Skaters</h3>
+                <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{skaters.length} skater{skaters.length !== 1 ? 's' : ''} registered</p>
               </div>
-              <button onClick={openSkaterCreate} className="flex items-center gap-2 bg-[#7B1113] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#6a0f10] transition shadow-sm cursor-pointer">
+              <button onClick={openSkaterCreate} className="it-btn-primary inline-flex items-center gap-2 cursor-pointer rounded-md text-sm font-medium shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)]" style={{ padding: '9px 14px' }}>
                 <IconPlus />
-                Add Skater
+                Add skater
               </button>
             </div>
             {skaters.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-                  <svg className="w-7 h-7 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <div style={{ width: 56, height: 56, borderRadius: 'var(--r-md)', background: 'var(--ice-soft)', color: 'var(--ice-deep)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                  <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
                     <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
                     <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
                   </svg>
                 </div>
-                <p className="text-slate-800 font-semibold">No skaters yet</p>
-                <p className="text-slate-500 text-sm mt-1">Add skaters to enroll them in classes.</p>
+                <p className="font-display" style={{ fontSize: 18, fontWeight: 500 }}>No skaters yet</p>
+                <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>Add skaters to enroll them in classes.</p>
+                <p style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 12, maxWidth: 420, lineHeight: 1.5 }}>
+                  Or run <span className="font-mono" style={{ fontSize: 11 }}>supabase-seed-demo-data.sql</span> / <span className="font-mono" style={{ fontSize: 11 }}>supabase-reset.sql</span> in Supabase to refill sample skaters.
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/60">
-                      <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Name</th>
-                      <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Level</th>
-                      <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Parent</th>
-                      <th className="text-right px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                    <tr style={{ borderBottom: '1px solid var(--hairline-soft)', background: 'var(--surface2)' }}>
+                      <th className="eyebrow text-left px-6 py-3.5">Name</th>
+                      <th className="eyebrow text-left px-6 py-3.5">Level</th>
+                      <th className="eyebrow text-left px-6 py-3.5">Parent</th>
+                      <th className="eyebrow text-right px-6 py-3.5">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {skaters.map((s) => (
-                      <tr key={s.id} className="hover:bg-slate-50 transition-colors group">
+                  <tbody>
+                    {skaters.map((s, idx) => (
+                      <tr key={s.id} className="group transition-colors" style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--hairline-soft)' }}>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-[#7B1113]/10 flex items-center justify-center text-[#7B1113] text-xs font-bold flex-shrink-0">
+                            <div className="flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--ice-soft)', color: 'var(--ice-deep)' }}>
                               {s.full_name.charAt(0).toUpperCase()}
                             </div>
-                            <span className="font-semibold text-slate-900">{s.full_name}</span>
+                            <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{s.full_name}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -511,15 +735,15 @@ export default function AdminDashboard() {
                             {s.level?.name || '—'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-slate-600">
-                          {s.parent?.full_name || <span className="text-slate-400 italic text-xs">None</span>}
+                        <td className="px-6 py-4" style={{ color: 'var(--ink-soft)' }}>
+                          {s.parent?.full_name || <span style={{ color: 'var(--muted)', fontStyle: 'italic', fontSize: 12 }}>None</span>}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => openSkaterEdit(s)} className="flex items-center gap-1.5 text-slate-500 hover:text-[#7B1113] hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer">
+                            <button onClick={() => openSkaterEdit(s)} className="flex items-center gap-1.5 hover:bg-[var(--ice-soft)] px-2.5 py-1.5 rounded-md text-xs font-medium cursor-pointer" style={{ color: 'var(--ink-soft)' }}>
                               <IconEdit /> Edit
                             </button>
-                            <button onClick={() => handleSkaterDelete(s.id)} className="flex items-center gap-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer">
+                            <button onClick={() => handleSkaterDelete(s.id)} className="flex items-center gap-1.5 hover:bg-[var(--rust-soft)] px-2.5 py-1.5 rounded-md text-xs font-medium cursor-pointer" style={{ color: 'var(--muted)' }}>
                               <IconTrash /> Delete
                             </button>
                           </div>
@@ -533,10 +757,52 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* INSTRUCTORS TAB */}
+        {tab === 'Instructors' && (
+          <div className="card overflow-hidden">
+            <div className="px-6 py-5" style={{ borderBottom: '1px solid var(--hairline-soft)' }}>
+              <h3 className="font-display" style={{ fontSize: 22, fontWeight: 500 }}>Instructors</h3>
+              <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>Staff with the instructor role — assign them when you create or edit classes.</p>
+            </div>
+            {instructors.length === 0 ? (
+              <div className="py-16 text-center px-4" style={{ color: 'var(--muted)', fontSize: 14 }}>No instructor profiles yet.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--hairline-soft)', background: 'var(--surface2)' }}>
+                      <th className="eyebrow text-left px-6 py-3.5">Name</th>
+                      <th className="eyebrow text-left px-6 py-3.5">User ID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {instructors.map((p, idx) => (
+                      <tr key={p.id} style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--hairline-soft)' }}>
+                        <td className="px-6 py-4" style={{ fontWeight: 500, color: 'var(--ink)' }}>{p.full_name}</td>
+                        <td className="px-6 py-4 font-mono text-xs" style={{ color: 'var(--muted)' }}>{p.id}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* REPORTS TAB */}
+        {tab === 'Reports' && (
+          <div className="card" style={{ padding: 36, textAlign: 'center', maxWidth: 520, margin: '0 auto' }}>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Coming soon</div>
+            <h3 className="font-display" style={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)' }}>Program reports</h3>
+            <p style={{ fontSize: 14, color: 'var(--muted)', marginTop: 10, lineHeight: 1.55 }}>
+              Exportable attendance summaries, skill-pass throughput, and waitlist analytics will live here — aligned with the hi-fi admin artboard.
+            </p>
+          </div>
+        )}
+
         {/* ENROLLMENT TAB */}
         {tab === 'Enrollment' && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-            <h3 className="text-lg font-bold text-slate-900 mb-5">Enrollment</h3>
+          <div className="card" style={{ padding: 24 }}>
             <div className="mb-6">
               <label className={labelCls}>Select a class</label>
               <select value={enrollClassId} onChange={e => { setEnrollClassId(e.target.value); if (e.target.value) loadEnrollments(e.target.value) }}
@@ -550,7 +816,7 @@ export default function AdminDashboard() {
 
             {enrollClassId && (
               enrollLoading ? (
-                <div className="flex items-center gap-2 text-slate-400 text-sm py-8 justify-center">
+                <div className="flex items-center gap-2 text-sm py-8 justify-center" style={{ color: 'var(--muted)' }}>
                   <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24" aria-hidden>
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
@@ -561,25 +827,25 @@ export default function AdminDashboard() {
                 <div className="space-y-6">
                   <div>
                     <div className="flex items-center gap-2 mb-3">
-                      <h4 className="text-sm font-semibold text-slate-700">Enrolled</h4>
-                      <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold">{enrollments.length}</span>
+                      <h4 style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-soft)' }}>Enrolled</h4>
+                      <span className="pill pill-spring">{enrollments.length}</span>
                     </div>
                     {enrollments.length === 0 ? (
-                      <p className="text-slate-400 text-sm italic">No skaters enrolled.</p>
+                      <p style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>No skaters enrolled.</p>
                     ) : (
                       <div className="space-y-1.5">
                         {enrollments.map(en => (
-                          <div key={en.id} className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 text-sm">
+                          <div key={en.id} className="flex items-center justify-between rounded-md px-4 py-2.5 text-sm" style={{ background: 'var(--spring-soft)', border: '1px solid rgba(58,154,118,0.2)' }}>
                             <div className="flex items-center gap-2.5">
-                              <div className="w-6 h-6 rounded-full bg-green-200 flex items-center justify-center text-green-700 text-xs font-bold flex-shrink-0">
+                              <div className="flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(58,154,118,0.25)', color: 'var(--spring)' }}>
                                 {en.skater.full_name.charAt(0)}
                               </div>
-                              <span className="font-medium text-slate-800">{en.skater.full_name}</span>
+                              <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{en.skater.full_name}</span>
                               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${getLevelBadge(en.skater.level?.name || '')}`}>
                                 {en.skater.level?.name || '—'}
                               </span>
                             </div>
-                            <button onClick={() => handleUnenroll(en.skater_id)} className="text-red-500 hover:text-red-700 text-xs font-semibold transition cursor-pointer">Remove</button>
+                            <button onClick={() => handleUnenroll(en.skater_id)} className="text-xs font-medium cursor-pointer" style={{ color: 'var(--rust)' }}>Remove</button>
                           </div>
                         ))}
                       </div>
@@ -587,25 +853,25 @@ export default function AdminDashboard() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-3">
-                      <h4 className="text-sm font-semibold text-slate-700">Available to Enroll</h4>
-                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">{unenrolledSkaters.length}</span>
+                      <h4 style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-soft)' }}>Available to enroll</h4>
+                      <span className="pill">{unenrolledSkaters.length}</span>
                     </div>
                     {unenrolledSkaters.length === 0 ? (
-                      <p className="text-slate-400 text-sm italic">All skaters are enrolled in this class.</p>
+                      <p style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>All skaters are enrolled in this class.</p>
                     ) : (
                       <div className="space-y-1.5">
                         {unenrolledSkaters.map(s => (
-                          <div key={s.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm hover:bg-slate-100 transition-colors">
+                          <div key={s.id} className="flex items-center justify-between rounded-md px-4 py-2.5 text-sm" style={{ background: 'var(--surface2)', border: '1px solid var(--hairline)' }}>
                             <div className="flex items-center gap-2.5">
-                              <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-xs font-bold flex-shrink-0">
+                              <div className="flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--hairline)', color: 'var(--ink-soft)' }}>
                                 {s.full_name.charAt(0)}
                               </div>
-                              <span className="font-medium text-slate-800">{s.full_name}</span>
+                              <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{s.full_name}</span>
                               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${getLevelBadge(s.level?.name || '')}`}>
                                 {s.level?.name || '—'}
                               </span>
                             </div>
-                            <button onClick={() => handleEnroll(s.id)} className="text-[#7B1113] hover:text-[#6a0f10] text-xs font-semibold transition cursor-pointer">+ Enroll</button>
+                            <button onClick={() => handleEnroll(s.id)} className="text-xs font-medium cursor-pointer" style={{ color: 'var(--ice-deep)' }}>+ Enroll</button>
                           </div>
                         ))}
                       </div>
@@ -620,46 +886,80 @@ export default function AdminDashboard() {
         {/* SKATING SHOW TAB */}
         {tab === 'Skating Show' && (
           <div className="space-y-5">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="flex justify-between items-center px-6 py-5 border-b border-slate-100">
+            <div className="card overflow-hidden">
+              <div className="flex justify-between items-center px-6 py-5" style={{ borderBottom: '1px solid var(--hairline-soft)' }}>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Skating Shows</h3>
-                  <p className="text-sm text-slate-500 mt-0.5">{shows.length} show{shows.length !== 1 ? 's' : ''}</p>
+                  <h3 className="font-display" style={{ fontSize: 22, fontWeight: 500 }}>
+                    Skating <span style={{ fontStyle: 'italic' }}>shows</span>
+                  </h3>
+                  <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{shows.length} show{shows.length !== 1 ? 's' : ''}</p>
                 </div>
-                <button onClick={openShowCreate} className="flex items-center gap-2 bg-[#7B1113] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#6a0f10] transition shadow-sm cursor-pointer">
+                <button onClick={openShowCreate} className="it-btn-primary inline-flex items-center gap-2 cursor-pointer rounded-md text-sm font-medium shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)]" style={{ padding: '9px 14px' }}>
                   <IconPlus />
-                  Create Show
+                  New show
                 </button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3.5" style={{ borderBottom: '1px solid var(--hairline-soft)', background: 'var(--surface2)' }}>
+                <div className="inline-flex rounded-md p-1" style={{ border: '1px solid var(--hairline)', background: 'var(--surface)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowView('list')}
+                    className="cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium"
+                    style={{ background: showView === 'list' ? 'var(--ice-soft)' : 'transparent', color: showView === 'list' ? 'var(--ice-deep)' : 'var(--muted)' }}
+                  >
+                    List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowView('calendar')}
+                    className="cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium"
+                    style={{ background: showView === 'calendar' ? 'var(--ice-soft)' : 'transparent', color: showView === 'calendar' ? 'var(--ice-deep)' : 'var(--muted)' }}
+                  >
+                    Calendar
+                  </button>
+                </div>
+                {shows.length > 1 && (
+                  <select
+                    value={calendarShowId}
+                    onChange={(e) => setCalendarShowId(e.target.value)}
+                    className={inputCls}
+                    style={{ maxWidth: 280 }}
+                  >
+                    {shows.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
               {shows.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                  <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-                    <svg className="w-7 h-7 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                  <div style={{ width: 56, height: 56, borderRadius: 'var(--r-md)', background: 'var(--ice-soft)', color: 'var(--ice-deep)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                    <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                     </svg>
                   </div>
-                  <p className="text-slate-800 font-semibold">No shows yet</p>
-                  <p className="text-slate-500 text-sm mt-1">Create a show to organize your performances.</p>
+                  <p className="font-display" style={{ fontSize: 18, fontWeight: 500 }}>No shows yet</p>
+                  <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>Create a show to organize your performances.</p>
                 </div>
-              ) : (
+              ) : showView === 'list' ? (
                 <div className="p-6 space-y-4">
                   {shows.map(show => (
-                    <div key={show.id} className="border border-slate-200 rounded-2xl overflow-hidden">
+                    <div key={show.id} className="overflow-hidden" style={{ border: '1px solid var(--hairline)', borderRadius: 'var(--r-lg)' }}>
                       {/* Show header */}
-                      <div className="flex justify-between items-start px-5 py-4 bg-slate-50 border-b border-slate-200">
+                      <div className="flex justify-between items-start px-5 py-4" style={{ background: 'var(--surface2)', borderBottom: '1px solid var(--hairline)' }}>
                         <div>
-                          <h4 className="font-bold text-slate-900">{show.name}</h4>
+                          <h4 className="font-display" style={{ fontSize: 18, fontWeight: 500 }}>{show.name}</h4>
                           <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                            <span className="text-xs text-slate-500">{show.show_date}{show.show_time ? ` at ${show.show_time}` : ''}</span>
-                            {show.location && <span className="text-xs text-slate-500">· {show.location}</span>}
-                            {show.theme && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">Theme: {show.theme}</span>}
+                            <span className="font-mono" style={{ fontSize: 11, color: 'var(--muted)' }}>{show.show_date}{show.show_time ? ` · ${show.show_time}` : ''}</span>
+                            {show.location && <span style={{ fontSize: 12, color: 'var(--muted)' }}>· {show.location}</span>}
+                            {show.theme && <span className="pill pill-honey">Theme: {show.theme}</span>}
                           </div>
                         </div>
                         <div className="flex gap-1.5 flex-shrink-0 ml-4">
-                          <button onClick={() => openShowEdit(show)} className="flex items-center gap-1 text-slate-500 hover:text-[#7B1113] hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border border-slate-200">
+                          <button onClick={() => openShowEdit(show)} className="flex items-center gap-1 hover:bg-[var(--ice-soft)] px-2.5 py-1.5 rounded-md text-xs font-medium cursor-pointer" style={{ color: 'var(--ink-soft)', border: '1px solid var(--hairline)' }}>
                             <IconEdit /> Edit
                           </button>
-                          <button onClick={() => handleShowDelete(show.id)} className="flex items-center gap-1 text-slate-400 hover:text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border border-slate-200">
+                          <button onClick={() => handleShowDelete(show.id)} className="flex items-center gap-1 hover:bg-[var(--rust-soft)] px-2.5 py-1.5 rounded-md text-xs font-medium cursor-pointer" style={{ color: 'var(--muted)', border: '1px solid var(--hairline)' }}>
                             <IconTrash /> Delete
                           </button>
                         </div>
@@ -667,32 +967,32 @@ export default function AdminDashboard() {
                       {/* Groups */}
                       <div className="p-5">
                         <div className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-semibold text-slate-700">Performance Groups</span>
-                          <button onClick={() => openGroupCreate(show.id)} className="flex items-center gap-1.5 text-[#7B1113] text-xs font-semibold hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition cursor-pointer">
+                          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-soft)' }}>Performance groups</span>
+                          <button onClick={() => openGroupCreate(show.id)} className="flex items-center gap-1.5 text-xs font-medium hover:bg-[var(--ice-soft)] px-2.5 py-1.5 rounded-md cursor-pointer" style={{ color: 'var(--ice-deep)' }}>
                             <IconPlus />
-                            Add Group
+                            Add group
                           </button>
                         </div>
                         {(!show.groups || show.groups.length === 0) ? (
-                          <p className="text-slate-400 text-sm italic">No groups defined yet.</p>
+                          <p style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>No groups defined yet.</p>
                         ) : (
                           <div className="space-y-3">
                             {show.groups.map(g => (
-                              <div key={g.id} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                              <div key={g.id} className="p-4" style={{ background: 'var(--surface2)', border: '1px solid var(--hairline)', borderRadius: 'var(--r-md)' }}>
                                 <div className="flex justify-between items-start mb-2">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-semibold text-slate-800 text-sm">{g.name}</span>
-                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">{g.show_half}</span>
+                                    <span style={{ fontWeight: 500, color: 'var(--ink)', fontSize: 13 }}>{g.name}</span>
+                                    <span className="pill pill-ice">{g.show_half}</span>
                                     {g.levels?.map(gl => gl.level?.name).filter(Boolean).map(ln => (
                                       <span key={ln} className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${getLevelBadge(ln!)}`}>{ln}</span>
                                     ))}
                                   </div>
                                   <div className="flex gap-1 flex-shrink-0 ml-2">
-                                    <button onClick={() => openPracticeCreate(show.id, g.id)} className="flex items-center gap-1 text-[#7B1113] text-xs font-semibold hover:bg-red-50 px-2 py-1 rounded-lg transition cursor-pointer">
+                                    <button onClick={() => openPracticeCreate(show.id, g.id)} className="flex items-center gap-1 text-xs font-medium hover:bg-[var(--ice-soft)] px-2 py-1 rounded-md cursor-pointer" style={{ color: 'var(--ice-deep)' }}>
                                       <IconPlus />
                                       Practice
                                     </button>
-                                    <button onClick={() => handleGroupDelete(g.id)} className="text-slate-400 hover:text-red-600 hover:bg-red-50 w-6 h-6 flex items-center justify-center rounded-lg transition cursor-pointer">
+                                    <button onClick={() => handleGroupDelete(g.id)} className="hover:bg-[var(--rust-soft)] w-6 h-6 flex items-center justify-center rounded-md cursor-pointer" style={{ color: 'var(--muted)' }}>
                                       <IconX />
                                     </button>
                                   </div>
@@ -700,12 +1000,12 @@ export default function AdminDashboard() {
                                 {g.practices && g.practices.length > 0 && (
                                   <div className="mt-3 space-y-1.5">
                                     {g.practices.map(p => (
-                                      <div key={p.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 text-xs border border-slate-200">
-                                        <span className="text-slate-700 font-medium">
+                                      <div key={p.id} className="flex items-center justify-between rounded-md px-3 py-2 text-xs" style={{ background: 'var(--surface)', border: '1px solid var(--hairline)' }}>
+                                        <span className="font-mono" style={{ color: 'var(--ink-soft)' }}>
                                           {p.practice_date} · {p.start_time}–{p.end_time}
-                                          {p.label && <span className="text-slate-400 ml-1.5">({p.label})</span>}
+                                          {p.label && <span style={{ color: 'var(--muted)', marginLeft: 6 }}>({p.label})</span>}
                                         </span>
-                                        <button onClick={() => handlePracticeDelete(p.id)} className="text-slate-400 hover:text-red-600 transition cursor-pointer w-5 h-5 flex items-center justify-center">
+                                        <button onClick={() => handlePracticeDelete(p.id)} className="cursor-pointer w-5 h-5 flex items-center justify-center" style={{ color: 'var(--muted)' }}>
                                           <IconX />
                                         </button>
                                       </div>
@@ -720,6 +1020,50 @@ export default function AdminDashboard() {
                     </div>
                   ))}
                 </div>
+              ) : (
+                <div className="p-6">
+                  {!calendarShow || !monthStart ? (
+                    <p style={{ fontSize: 13, color: 'var(--muted)' }}>No show calendar data available.</p>
+                  ) : (
+                    <div className="card" style={{ padding: 16 }}>
+                      <div className="flex items-end justify-between mb-4">
+                        <div>
+                          <h4 className="font-display" style={{ fontSize: 20, fontWeight: 500 }}>{calendarShow.name}</h4>
+                          <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{monthName}</p>
+                        </div>
+                        <span className="pill pill-ice">{calendarPracticeEvents.length} practices</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: 8 }}>
+                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+                          <div key={d} className="eyebrow" style={{ textAlign: 'center', fontSize: 10 }}>{d}</div>
+                        ))}
+                        {Array.from({ length: leadingMondayOffset }).map((_, i) => (
+                          <div key={`empty-${i}`} style={{ minHeight: 92, borderRadius: 'var(--r-sm)', background: 'var(--surface2)', border: '1px solid var(--hairline-soft)' }} />
+                        ))}
+                        {Array.from({ length: daysInMonth }).map((_, i) => {
+                          const day = i + 1
+                          const iso = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                          const dayEvents = eventsByDate.get(iso) || []
+                          return (
+                            <div key={iso} style={{ minHeight: 92, borderRadius: 'var(--r-sm)', background: dayEvents.length ? 'var(--ice-tint)' : 'var(--surface)', border: `1px solid ${dayEvents.length ? 'rgba(59,130,196,0.35)' : 'var(--hairline)'}`, padding: 6 }}>
+                              <div className="font-mono" style={{ fontSize: 10, color: 'var(--muted)' }}>{day}</div>
+                              <div className="mt-1.5 space-y-1">
+                                {dayEvents.slice(0, 2).map((evt, idx) => (
+                                  <div key={`${iso}-${idx}`} style={{ borderRadius: 999, background: 'var(--ice-soft)', color: 'var(--ice-deep)', border: '1px solid rgba(30,90,145,0.2)', padding: '2px 6px', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {evt.groupName.split('—')[0].trim()} · {evt.start.slice(0, 5)}
+                                  </div>
+                                ))}
+                                {dayEvents.length > 2 ? (
+                                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>+{dayEvents.length - 2} more</div>
+                                ) : null}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -729,15 +1073,15 @@ export default function AdminDashboard() {
       {/* CLASS MODAL */}
       {showClassForm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900">{editClassId ? 'Edit Class' : 'Create New Class'}</h3>
-              <button onClick={() => setShowClassForm(false)} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer">
+          <div className="card w-full max-w-md" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-lift)' }}>
+            <div className="flex items-center justify-between px-6 pt-6 pb-4" style={{ borderBottom: '1px solid var(--hairline-soft)' }}>
+              <h3 className="font-display" style={{ fontSize: 20, fontWeight: 500 }}>{editClassId ? 'Edit class' : 'New class'}</h3>
+              <button onClick={() => setShowClassForm(false)} className="w-8 h-8 rounded-md flex items-center justify-center cursor-pointer" style={{ color: 'var(--muted)' }} aria-label="Close">
                 <IconX />
               </button>
             </div>
             <div className="px-6 py-5">
-              {cfError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 mb-4 text-sm">{cfError}</div>}
+              {cfError && <div className="rounded-md p-3 mb-4 text-sm" style={{ background: 'var(--rust-soft)', border: '1px solid rgba(198,107,74,0.4)', color: '#8b3a25' }}>{cfError}</div>}
               <form id="classForm" onSubmit={handleClassSubmit} className="space-y-4">
                 <div>
                   <label className={labelCls}>Level</label>
@@ -747,10 +1091,25 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <label className={labelCls}>Instructor</label>
-                  <select value={cfInstructor} onChange={e => setCfInstructor(e.target.value)} className={inputCls}>
-                    <option value="">— Unassigned —</option>
-                    {instructors.map(i => <option key={i.id} value={i.id}>{i.full_name}</option>)}
-                  </select>
+                  <div className="space-y-2 max-h-40 overflow-y-auto p-3" style={{ border: '1px solid var(--hairline)', borderRadius: 'var(--r-md)', background: 'var(--surface2)' }}>
+                    {instructors.map(i => (
+                      <label key={i.id} className="flex items-center gap-2.5 text-sm cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={cfInstructors.includes(i.id)}
+                          onChange={e =>
+                            setCfInstructors((prev) =>
+                              e.target.checked ? [...prev, i.id] : prev.filter((id) => id !== i.id)
+                            )
+                          }
+                          className="w-4 h-4 rounded"
+                          style={{ accentColor: 'var(--ice)' }}
+                        />
+                        <span style={{ color: 'var(--ink-soft)' }}>{i.full_name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>Select one or more instructors (required).</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -773,8 +1132,8 @@ export default function AdminDashboard() {
               </form>
             </div>
             <div className="px-6 pb-6 flex gap-3">
-              <button type="button" onClick={() => setShowClassForm(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 transition cursor-pointer">Cancel</button>
-              <button type="submit" form="classForm" disabled={cfLoading} className="flex-1 bg-[#7B1113] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#6a0f10] transition disabled:opacity-50 cursor-pointer shadow-sm">
+              <button type="button" onClick={() => setShowClassForm(false)} className="flex-1 py-2.5 rounded-md text-sm font-medium cursor-pointer" style={{ border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink-soft)' }}>Cancel</button>
+              <button type="submit" form="classForm" disabled={cfLoading} className="it-btn-primary flex-1 py-2.5 rounded-md text-sm font-medium shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)] cursor-pointer">
                 {cfLoading ? 'Saving…' : editClassId ? 'Save Changes' : 'Create Class'}
               </button>
             </div>
@@ -785,15 +1144,15 @@ export default function AdminDashboard() {
       {/* SKATER MODAL */}
       {showSkaterForm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900">{editSkaterId ? 'Edit Skater' : 'Add Skater'}</h3>
-              <button onClick={() => setShowSkaterForm(false)} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer">
+          <div className="card w-full max-w-md" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-lift)' }}>
+            <div className="flex items-center justify-between px-6 pt-6 pb-4" style={{ borderBottom: '1px solid var(--hairline-soft)' }}>
+              <h3 className="font-display" style={{ fontSize: 20, fontWeight: 500 }}>{editSkaterId ? 'Edit skater' : 'Add skater'}</h3>
+              <button onClick={() => setShowSkaterForm(false)} className="w-8 h-8 rounded-md flex items-center justify-center cursor-pointer" style={{ color: 'var(--muted)' }} aria-label="Close">
                 <IconX />
               </button>
             </div>
             <div className="px-6 py-5">
-              {sfError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 mb-4 text-sm">{sfError}</div>}
+              {sfError && <div className="rounded-md p-3 mb-4 text-sm" style={{ background: 'var(--rust-soft)', border: '1px solid rgba(198,107,74,0.4)', color: '#8b3a25' }}>{sfError}</div>}
               <form id="skaterForm" onSubmit={handleSkaterSubmit} className="space-y-4">
                 <div>
                   <label className={labelCls}>Full Name</label>
@@ -815,8 +1174,8 @@ export default function AdminDashboard() {
               </form>
             </div>
             <div className="px-6 pb-6 flex gap-3">
-              <button type="button" onClick={() => setShowSkaterForm(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 transition cursor-pointer">Cancel</button>
-              <button type="submit" form="skaterForm" disabled={sfLoading} className="flex-1 bg-[#7B1113] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#6a0f10] transition disabled:opacity-50 cursor-pointer shadow-sm">
+              <button type="button" onClick={() => setShowSkaterForm(false)} className="flex-1 py-2.5 rounded-md text-sm font-medium cursor-pointer" style={{ border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink-soft)' }}>Cancel</button>
+              <button type="submit" form="skaterForm" disabled={sfLoading} className="it-btn-primary flex-1 py-2.5 rounded-md text-sm font-medium shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)] cursor-pointer">
                 {sfLoading ? 'Saving…' : editSkaterId ? 'Save Changes' : 'Add Skater'}
               </button>
             </div>
@@ -827,22 +1186,22 @@ export default function AdminDashboard() {
       {/* SHOW MODAL */}
       {showShowForm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900">{editShowId ? 'Edit Show' : 'Create Show'}</h3>
-              <button onClick={() => setShowShowForm(false)} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer">
+          <div className="card w-full max-w-md" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-lift)' }}>
+            <div className="flex items-center justify-between px-6 pt-6 pb-4" style={{ borderBottom: '1px solid var(--hairline-soft)' }}>
+              <h3 className="font-display" style={{ fontSize: 20, fontWeight: 500 }}>{editShowId ? 'Edit show' : 'New show'}</h3>
+              <button onClick={() => setShowShowForm(false)} className="w-8 h-8 rounded-md flex items-center justify-center cursor-pointer" style={{ color: 'var(--muted)' }} aria-label="Close">
                 <IconX />
               </button>
             </div>
             <div className="px-6 py-5">
-              {shError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 mb-4 text-sm">{shError}</div>}
+              {shError && <div className="rounded-md p-3 mb-4 text-sm" style={{ background: 'var(--rust-soft)', border: '1px solid rgba(198,107,74,0.4)', color: '#8b3a25' }}>{shError}</div>}
               <form id="showForm" onSubmit={handleShowSubmit} className="space-y-4">
                 <div>
                   <label className={labelCls}>Show Name</label>
                   <input type="text" value={shName} onChange={e => setShName(e.target.value)} required placeholder="Spring Showcase 2026" className={inputCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Theme <span className="font-normal text-slate-400">(optional)</span></label>
+                  <label className={labelCls}>Theme <span className="font-normal" style={{ color: 'var(--muted)' }}>(optional)</span></label>
                   <input type="text" value={shTheme} onChange={e => setShTheme(e.target.value)} placeholder="e.g. Frozen Wonderland" className={inputCls} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -851,19 +1210,19 @@ export default function AdminDashboard() {
                     <input type="date" value={shDate} onChange={e => setShDate(e.target.value)} required className={inputCls} />
                   </div>
                   <div>
-                    <label className={labelCls}>Time <span className="font-normal text-slate-400">(opt.)</span></label>
+                    <label className={labelCls}>Time <span className="font-normal" style={{ color: 'var(--muted)' }}>(opt.)</span></label>
                     <input type="time" value={shTime} onChange={e => setShTime(e.target.value)} className={inputCls} />
                   </div>
                 </div>
                 <div>
-                  <label className={labelCls}>Location <span className="font-normal text-slate-400">(optional)</span></label>
+                  <label className={labelCls}>Location <span className="font-normal" style={{ color: 'var(--muted)' }}>(optional)</span></label>
                   <input type="text" value={shLocation} onChange={e => setShLocation(e.target.value)} placeholder="Frank Southern Ice Arena" className={inputCls} />
                 </div>
               </form>
             </div>
             <div className="px-6 pb-6 flex gap-3">
-              <button type="button" onClick={() => setShowShowForm(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 transition cursor-pointer">Cancel</button>
-              <button type="submit" form="showForm" disabled={shLoading} className="flex-1 bg-[#7B1113] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#6a0f10] transition disabled:opacity-50 cursor-pointer shadow-sm">
+              <button type="button" onClick={() => setShowShowForm(false)} className="flex-1 py-2.5 rounded-md text-sm font-medium cursor-pointer" style={{ border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink-soft)' }}>Cancel</button>
+              <button type="submit" form="showForm" disabled={shLoading} className="it-btn-primary flex-1 py-2.5 rounded-md text-sm font-medium shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)] cursor-pointer">
                 {shLoading ? 'Saving…' : editShowId ? 'Save Changes' : 'Create Show'}
               </button>
             </div>
@@ -874,15 +1233,15 @@ export default function AdminDashboard() {
       {/* GROUP MODAL */}
       {showGroupForm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900">Add Group</h3>
-              <button onClick={() => setShowGroupForm(false)} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer">
+          <div className="card w-full max-w-md" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-lift)' }}>
+            <div className="flex items-center justify-between px-6 pt-6 pb-4" style={{ borderBottom: '1px solid var(--hairline-soft)' }}>
+              <h3 className="font-display" style={{ fontSize: 20, fontWeight: 500 }}>Add group</h3>
+              <button onClick={() => setShowGroupForm(false)} className="w-8 h-8 rounded-md flex items-center justify-center cursor-pointer" style={{ color: 'var(--muted)' }} aria-label="Close">
                 <IconX />
               </button>
             </div>
             <div className="px-6 py-5">
-              {grError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 mb-4 text-sm">{grError}</div>}
+              {grError && <div className="rounded-md p-3 mb-4 text-sm" style={{ background: 'var(--rust-soft)', border: '1px solid rgba(198,107,74,0.4)', color: '#8b3a25' }}>{grError}</div>}
               <form id="groupForm" onSubmit={handleGroupSubmit} className="space-y-4">
                 <div>
                   <label className={labelCls}>Group Name</label>
@@ -896,13 +1255,13 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <label className={labelCls}>Levels in this Group</label>
-                  <div className="space-y-2 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
+                  <div className="space-y-2 max-h-40 overflow-y-auto p-3" style={{ border: '1px solid var(--hairline)', borderRadius: 'var(--r-md)', background: 'var(--surface2)' }}>
                     {levels.map(l => (
                       <label key={l.id} className="flex items-center gap-2.5 text-sm cursor-pointer group">
                         <input type="checkbox" checked={grLevels.includes(l.id)}
                           onChange={e => setGrLevels(e.target.checked ? [...grLevels, l.id] : grLevels.filter(x => x !== l.id))}
-                          className="w-4 h-4 accent-[#7B1113] rounded" />
-                        <span className="text-slate-700 group-hover:text-slate-900">{l.name}</span>
+                          className="w-4 h-4 rounded" style={{ accentColor: 'var(--ice)' }} />
+                        <span style={{ color: 'var(--ink-soft)' }}>{l.name}</span>
                       </label>
                     ))}
                   </div>
@@ -910,8 +1269,8 @@ export default function AdminDashboard() {
               </form>
             </div>
             <div className="px-6 pb-6 flex gap-3">
-              <button type="button" onClick={() => setShowGroupForm(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 transition cursor-pointer">Cancel</button>
-              <button type="submit" form="groupForm" className="flex-1 bg-[#7B1113] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#6a0f10] transition cursor-pointer shadow-sm">Add Group</button>
+              <button type="button" onClick={() => setShowGroupForm(false)} className="flex-1 py-2.5 rounded-md text-sm font-medium cursor-pointer" style={{ border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink-soft)' }}>Cancel</button>
+              <button type="submit" form="groupForm" className="it-btn-primary flex-1 py-2.5 rounded-md text-sm font-medium shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)] cursor-pointer">Add group</button>
             </div>
           </div>
         </div>
@@ -920,15 +1279,15 @@ export default function AdminDashboard() {
       {/* PRACTICE MODAL */}
       {showPracticeForm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900">Add Practice Session</h3>
-              <button onClick={() => setShowPracticeForm(false)} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer">
+          <div className="card w-full max-w-md" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-lift)' }}>
+            <div className="flex items-center justify-between px-6 pt-6 pb-4" style={{ borderBottom: '1px solid var(--hairline-soft)' }}>
+              <h3 className="font-display" style={{ fontSize: 20, fontWeight: 500 }}>Add practice session</h3>
+              <button onClick={() => setShowPracticeForm(false)} className="w-8 h-8 rounded-md flex items-center justify-center cursor-pointer" style={{ color: 'var(--muted)' }} aria-label="Close">
                 <IconX />
               </button>
             </div>
             <div className="px-6 py-5">
-              {prError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 mb-4 text-sm">{prError}</div>}
+              {prError && <div className="rounded-md p-3 mb-4 text-sm" style={{ background: 'var(--rust-soft)', border: '1px solid rgba(198,107,74,0.4)', color: '#8b3a25' }}>{prError}</div>}
               <form id="practiceForm" onSubmit={handlePracticeSubmit} className="space-y-4">
                 <div>
                   <label className={labelCls}>Date</label>
@@ -945,14 +1304,14 @@ export default function AdminDashboard() {
                   </div>
                 </div>
                 <div>
-                  <label className={labelCls}>Label <span className="font-normal text-slate-400">(optional)</span></label>
+                  <label className={labelCls}>Label <span className="font-normal" style={{ color: 'var(--muted)' }}>(optional)</span></label>
                   <input type="text" value={prLabel} onChange={e => setPrLabel(e.target.value)} placeholder="e.g. Full run-through" className={inputCls} />
                 </div>
               </form>
             </div>
             <div className="px-6 pb-6 flex gap-3">
-              <button type="button" onClick={() => setShowPracticeForm(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 transition cursor-pointer">Cancel</button>
-              <button type="submit" form="practiceForm" className="flex-1 bg-[#7B1113] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#6a0f10] transition cursor-pointer shadow-sm">Add Practice</button>
+              <button type="button" onClick={() => setShowPracticeForm(false)} className="flex-1 py-2.5 rounded-md text-sm font-medium cursor-pointer" style={{ border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink-soft)' }}>Cancel</button>
+              <button type="submit" form="practiceForm" className="it-btn-primary flex-1 py-2.5 rounded-md text-sm font-medium shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)] cursor-pointer">Add practice</button>
             </div>
           </div>
         </div>

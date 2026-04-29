@@ -3,6 +3,16 @@
 
 IceTrack is a full-stack web application for managing a skating school (Frank Southern Ice Arena). It provides role-based dashboards for admins, instructors, and parents to manage classes, track attendance, record skill progress, and coordinate skating shows.
 
+**App entry:** there is no public marketing site in this repo. `/` redirects to **`/login`**. After sign-in, users are sent to **`/parent`**, **`/instructor`**, or **`/admin`** (short URLs), which immediately redirect to the corresponding **`/*/dashboard`** routes.
+
+---
+
+## Design fidelity (hi-fi / wireframes)
+
+- Canonical reference files live in **`docs/design-handoff/`** (exported from the course wireframe pack: `hifi-*.jsx`, `screens-*.jsx`, HTML artboards, `README.md`).
+- **Admin** follows the handoff choice **Overview first** (`hifi-admin.jsx`): default tab is **Overview** (KPI strip, enrollment-by-level bars, activity + showcase rail). **Classes**, **Skaters**, **Enrollment**, **Show**, and **Reports** remain for day-to-day CRUD and placeholders.
+- **Login / register** are aligned to **`hifi-auth.jsx`** (split login hero, register sidebar, admin callout). **Marketing landing** from the handoff is intentionally **not** implemented.
+
 ---
 
 ## Demo Video
@@ -19,9 +29,12 @@ IceTrack is a full-stack web application for managing a skating school (Frank So
 ## Features
 
 ### Admin Dashboard
+- **Overview (default)** — KPI cards, enrollment-by-level visualization (vs estimated capacity), recent-activity rail, spring-showcase card; matches `hifi-admin.jsx` direction B
 - **Class Management** — Create, edit, and delete skating classes (level, instructor, schedule, ice zone)
 - **Skater Profiles** — Add and manage skater records linked to parent accounts
 - **Enrollment** — Enroll/unenroll skaters into classes with one click
+- **Instructors** — Read-only directory of instructor-role profiles (assign from class editor)
+- **Reports** — Placeholder for future exportable program analytics
 - **Skating Show Management** — Create shows with themes, dates, and locations; organize skaters into performance groups; schedule practice sessions
 
 ### Instructor Dashboard
@@ -63,9 +76,11 @@ npm install
 
 ### 3. Set up Supabase
 1. Go to [supabase.com](https://supabase.com) and create a free project
-2. In **SQL Editor**, run `supabase-schema.sql` first (core schema + RLS)
-3. Then run `supabase-phase2.sql` (skaters, skills, attendance, shows)
-4. Go to **Settings > API** and copy your Project URL, anon key, and service role key
+2. In **SQL Editor**, run **`supabase-reset.sql`** once — it drops/recreates every IceTrack table, seeds levels + 53 skills, the spring show calendar, and the three demo logins (fastest path for a clean project).
+3. If you already ran the older split scripts and only need the login fix, run **`supabase-fix-login.sql`** (updates `is_admin()` + demo passwords).
+4. If login still returns **"Database error querying schema"**, run **`supabase-hard-auth-fix.sql`** (repairs recursive RLS and older malformed `auth.users` demo rows in one pass).
+5. Run **`supabase-multi-instructor.sql`** to enable one-or-more instructors per class (keeps current `classes.instructor_id` as primary + adds support table for additional instructors).
+6. Go to **Settings > API** and copy your Project URL, anon key, and **service role** key.
 
 ### 4. Configure environment variables
 Copy `.env.example` to `.env.local` and fill in your values:
@@ -80,10 +95,20 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 > `.env.local` is gitignored and will never be committed.
 
-### 5. Create an Admin user
-Because admin is a privileged role, it must be created manually:
-1. Register any user via `/register`
-2. In Supabase **Table Editor → profiles**, change their `role` to `admin`
+### 5. Admin access & demo logins
+
+**If you ran `supabase-reset.sql`:** an `admin` profile and user already exist — no manual promotion step.
+
+**Otherwise (self-registered project):** create an admin by registering any account at `/register`, then in Supabase **Table Editor → `public.profiles`** set that row’s **`role`** to **`admin`**.
+
+**If the database has schema but almost no rows** (common after auth repair), run **`supabase-seed-demo-data.sql`** for a light class + skater + enrollment sample, or **`supabase-reset.sql`** for a full reseed.
+
+**Demo accounts** (after `supabase-reset.sql` or `supabase-demo-users.sql` + schema):
+- `parent@icetrack.com` / `parent123`
+- `instructor@icetrack.com` / `instructor123`
+- `admin@icetrack.com` / `frankSouth`
+
+**Login shows “Database error querying schema”?** That was caused by RLS evaluating `profiles` inside a `profiles` policy. The `is_admin()` helper must run with `SET row_security = off` on the function — run `supabase-fix-login.sql` (or re-run `supabase-reset.sql`).
 
 ### 6. Run the development server
 ```bash
@@ -97,27 +122,36 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ```
 app/
-  login/                  → Login page (role-based redirect)
+  page.tsx                → Redirects `/` → `/login` (no marketing site)
+  login/                  → Login (hi-fi split layout; redirects by role)
   register/               → Registration (parent or instructor)
-  admin/dashboard/        → Admin: classes, skaters, enrollments, shows
-  instructor/dashboard/   → Instructor: attendance grid + skill check-offs
-  parent/dashboard/       → Parent: children, attendance, skills, show info
+  admin/dashboard/        → Admin UI (Overview default + CRUD tabs)
+  instructor/dashboard/   → Instructor: attendance + skill check-offs
+  parent/dashboard/       → Parent: children, schedule, skills, show info
+  parent/journey/[id]/    → Skill journey (per skater)
   auth/callback/          → Supabase auth callback
   api/
-    skaters/              → Skater CRUD endpoints
+    auth/login/           → Password sign-in + profile bootstrap
+    admin/overview/       → Admin-only aggregates (enrollment by level, show counts)
+    skaters/              → Skater CRUD
     enrollments/          → Enrollment management
     attendance/           → Attendance records
     skills/               → Skills by level
-    skill-completions/    → Skill check-off tracking
-    skating-shows/        → Show + group + practice management
+    skill-completions/    → Skill passes
+    skating-shows/        → Shows, groups, practices
+
+docs/design-handoff/      → Hi-fi + wireframe JSX/HTML from the course pack
 
 lib/supabase/
   client.ts               → Browser Supabase client
   server.ts               → Server Supabase client
 
-middleware.ts             → Protects /admin /instructor /parent routes
-supabase-schema.sql       → Core schema (run first)
-supabase-phase2.sql       → Phase 2 schema (run second)
+middleware.ts             → Role checks for `/admin`, `/instructor`, `/parent` prefixes
+next.config.ts            → Short URLs `/admin` `/parent` `/instructor` → `/*/dashboard`
+
+supabase-reset.sql        → Full DB reset + seed (preferred)
+supabase-seed-demo-data.sql → Light refill when auth rows were recreated
+supabase-multi-instructor.sql → Adds class_instructors mapping for co-instructors
 .env.example              → Environment variable template
 ```
 
@@ -134,7 +168,16 @@ npm test            # Watch mode
 
 ## Acknowledgement
 
-*Developed in the class I400-Vibe and AI Programming, Spring 2026, IUB, with the assistance of models (gemini/codex/...) withing (cursor/antigravity/vscode/...).*
+*Developed in the class I400-Vibe and AI Programming, Spring 2026, IUB, with the assistance of models (claude/codex/gemini) within Cursor.*
+
+---
+
+## Phase 3 (Standalone + Integration)
+
+- Standalone reference implementation: this repository (`i400_vibeai_project`).
+- Class integration target: `https://github.iu.edu/I400sp25Vibe/ice_skating_fullstack` on branch `skilltracker-abdjimoh`.
+- **Design source:** `docs/design-handoff/` (hi-fi + wireframes; keep in sync with the course ZIP when it updates).
+- For deliverables, add/update demo assets in `docs/images/` + `docs/videos/` and keep links in this README working.
 
 ---
 

@@ -2,17 +2,61 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createProfile } from './actions'
 
+/* IceTrack logo mark */
+function ITLogo({ size = 16, color = '#0c1a2b' }: { size?: number; color?: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      <svg width={size + 4} height={size + 4} viewBox="0 0 28 28" fill="none" aria-hidden>
+        <path d="M5 19 Q 14 22, 23 19" stroke={color} strokeWidth="2" strokeLinecap="round" />
+        <path d="M9 19 L 12 8 L 14 8 L 13 19" stroke={color} strokeWidth="1.6" fill="none" strokeLinejoin="round" />
+        <circle cx="6" cy="20" r="1.2" fill={color} />
+        <circle cx="22" cy="20" r="1.2" fill={color} />
+      </svg>
+      <span className="font-display" style={{ fontWeight: 500, fontSize: size + 4, letterSpacing: '-0.02em', color }}>
+        Ice<span style={{ fontStyle: 'italic', fontWeight: 400 }}>Track</span>
+      </span>
+    </span>
+  )
+}
+
+/* Icons */
+const IconCheck = ({ size = 12, color = '#fff' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M4 12 L 9 17 L 20 6" />
+  </svg>
+)
+const IconUsers = ({ size = 22, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="9" cy="9" r="3" /><path d="M3 19 a 6 6 0 0 1 12 0" /><path d="M16 8 a 3 3 0 0 1 0 5" /><path d="M16 19 a 4 4 0 0 1 5 -4" />
+  </svg>
+)
+const IconStar = ({ size = 22, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M12 4 L 14 9.5 L 20 10 L 15.5 14 L 17 20 L 12 16.8 L 7 20 L 8.5 14 L 4 10 L 10 9.5 Z" />
+  </svg>
+)
+const IconArrowRight = ({ size = 14, color = '#fff' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M5 12 H 19 M 13 6 L 19 12 L 13 18" />
+  </svg>
+)
+
+const STEPS = [
+  { n: 1, t: 'Choose your role', s: 'Parent or instructor' },
+  { n: 2, t: 'Your details', s: 'Name, email, password' },
+  { n: 3, t: 'Verify email', s: 'Quick confirmation' },
+]
+
 export default function RegisterPage() {
-  const router = useRouter()
+  const [step, setStep] = useState(1)
+  const [role, setRole] = useState<'parent' | 'instructor'>('parent')
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [role, setRole] = useState<'parent' | 'instructor'>('parent')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -21,10 +65,10 @@ export default function RegisterPage() {
     e.preventDefault()
     setError('')
     if (password !== confirmPassword) { setError('Passwords do not match.'); return }
+    if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
     setLoading(true)
 
     const supabase = createClient()
-
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
@@ -38,7 +82,6 @@ export default function RegisterPage() {
     }
 
     const { error: profileError } = await createProfile(data.user.id, fullName, role)
-
     if (profileError) {
       setError(profileError)
       setLoading(false)
@@ -46,224 +89,287 @@ export default function RegisterPage() {
     }
 
     setSuccess(true)
+    setStep(3)
     setLoading(false)
-  }
-
-  if (success) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-10 max-w-sm w-full text-center">
-          <div className="w-16 h-16 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
-            <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Account created!</h2>
-          <p className="text-slate-500 text-sm mb-8 leading-relaxed">Check your email to confirm your account, then sign in.</p>
-          <Link
-            href="/login"
-            className="block w-full bg-[#7B1113] text-white py-3 rounded-xl font-semibold hover:bg-[#6a0f10] shadow-sm text-center text-sm"
-          >
-            Go to Sign In
-          </Link>
-        </div>
-      </div>
-    )
   }
 
   const passwordMismatch = !!confirmPassword && password !== confirmPassword
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left brand panel */}
-      <div className="hidden lg:flex lg:w-[44%] bg-[#7B1113] flex-col justify-between p-12 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]" aria-hidden>
-          <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <pattern id="hex2" width="56" height="56" patternUnits="userSpaceOnUse">
-                <path d="M28 4 L52 18 L52 46 L28 60 L4 46 L4 18 Z" fill="none" stroke="white" strokeWidth="1.5"/>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#hex2)"/>
-          </svg>
-        </div>
-        <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[#5e0d0f]/60 to-transparent pointer-events-none" aria-hidden />
+    <div className="min-h-screen" style={{ display: 'grid', gridTemplateColumns: '260px 1fr', background: 'var(--paper)' }}>
+      {/* Sidebar */}
+      <div className="hidden md:flex flex-col" style={{ padding: 28, borderRight: '1px solid var(--hairline)', background: 'var(--surface)' }}>
+        <ITLogo size={16} />
 
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-16">
-            <div className="w-9 h-9 bg-white/15 rounded-xl flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/>
-                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/>
-                <polyline points="9 5 12 2 15 5"/><polyline points="9 19 12 22 15 19"/>
-                <polyline points="5 9 2 12 5 15"/><polyline points="19 9 22 12 19 15"/>
-              </svg>
-            </div>
-            <span className="text-white font-bold text-xl tracking-tight">IceTrack</span>
-          </div>
-          <div>
-            <h2 className="text-white text-[2.4rem] font-bold leading-tight mb-5">
-              Join Frank Southern<br />Ice Arena
-            </h2>
-            <p className="text-red-200 text-base leading-relaxed max-w-[22rem]">
-              Create your account to access your child&apos;s progress, class schedule, and upcoming shows.
-            </p>
-          </div>
-        </div>
-
-        <div className="relative z-10 space-y-4">
-          {[
-            "View your child's skill card",
-            "Track attendance and sessions",
-            "Stay updated on skating shows",
-          ].map(item => (
-            <div key={item} className="flex items-center gap-3 text-red-100 text-sm">
-              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
-                </svg>
+        <div style={{ marginTop: 36, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {STEPS.map((s) => {
+            const state = step === s.n ? 'active' : step > s.n ? 'done' : 'pending'
+            return (
+              <div key={s.n} style={{ display: 'flex', gap: 12, padding: '10px 0' }}>
+                <div style={{
+                  width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: state === 'active' ? 'var(--ice)' : state === 'done' ? 'var(--spring)' : 'var(--surface2)',
+                  color: state === 'active' || state === 'done' ? '#fff' : 'var(--muted)',
+                  border: `1px solid ${state === 'active' ? 'var(--ice)' : state === 'done' ? 'var(--spring)' : 'var(--hairline)'}`,
+                  fontFamily: 'var(--font-mono, "Geist Mono", monospace)', fontSize: 12, fontWeight: 600, flexShrink: 0,
+                }}>
+                  {state === 'done' ? <IconCheck size={12} color="#fff" /> : s.n}
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: state === 'active' ? 'var(--ink)' : 'var(--muted)' }}>{s.t}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>{s.s}</div>
+                </div>
               </div>
-              <span className="font-medium">{item}</span>
-            </div>
-          ))}
+            )
+          })}
+        </div>
+
+        <div style={{
+          marginTop: 'auto', padding: 12, background: 'var(--ice-tint)', border: '1px solid var(--ice-soft)',
+          borderRadius: 'var(--r-md)', fontSize: 12, color: 'var(--ice-deep)', lineHeight: 1.45,
+        }}>
+          <strong>Admin?</strong> Admin accounts are created by IU staff. Stop by the rink office or email{' '}
+          <span className="font-mono">icetrack@iu.edu</span>.
         </div>
       </div>
 
-      {/* Right form panel */}
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-10 bg-slate-50">
-        <div className="w-full max-w-sm">
-          {/* Mobile logo */}
-          <div className="lg:hidden text-center mb-8">
-            <div className="w-14 h-14 bg-[#7B1113]/10 rounded-2xl flex items-center justify-center mx-auto mb-3">
-              <svg className="w-7 h-7 text-[#7B1113]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/>
-                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/>
-                <polyline points="9 5 12 2 15 5"/><polyline points="9 19 12 22 15 19"/>
-                <polyline points="5 9 2 12 5 15"/><polyline points="19 9 22 12 19 15"/>
-              </svg>
-            </div>
-            <h1 className="text-xl font-bold text-[#7B1113]">IceTrack</h1>
-            <p className="text-slate-500 text-sm">Frank Southern Ice Arena</p>
-          </div>
-
-          <h2 className="text-2xl font-bold text-slate-900 mb-1">Create your account</h2>
-          <p className="text-slate-500 text-sm mb-8">Fill in your details to get started</p>
-
-          {error && (
-            <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 text-red-700 rounded-xl p-3.5 mb-5 text-sm">
-              <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-              </svg>
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div>
-              <label htmlFor="fullName" className="block text-sm font-semibold text-slate-700 mb-1.5">Full name</label>
-              <input
-                id="fullName"
-                type="text"
-                required
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
-                placeholder="Jane Smith"
-                className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#7B1113]/20 focus:border-[#7B1113] focus:bg-white"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="email" className="block text-sm font-semibold text-slate-700 mb-1.5">Email address</label>
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="jane@example.com"
-                className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#7B1113]/20 focus:border-[#7B1113] focus:bg-white"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-slate-700 mb-1.5">Password</label>
-              <input
-                id="password"
-                type="password"
-                required
-                minLength={6}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="At least 6 characters"
-                className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#7B1113]/20 focus:border-[#7B1113] focus:bg-white"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-semibold text-slate-700 mb-1.5">Confirm password</label>
-              <input
-                id="confirmPassword"
-                type="password"
-                required
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter your password"
-                className={`w-full border rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#7B1113]/20 focus:border-[#7B1113] focus:bg-white ${
-                  passwordMismatch ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50'
-                }`}
-              />
-              {passwordMismatch && (
-                <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1">
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" aria-hidden><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
-                  Passwords do not match
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">I am a…</label>
-              <div className="grid grid-cols-2 gap-2.5">
-                {(['parent', 'instructor'] as const).map(r => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setRole(r)}
-                    className={`py-2.5 px-4 rounded-xl border-2 text-sm font-semibold capitalize transition cursor-pointer ${
-                      role === r
-                        ? 'border-[#7B1113] bg-[#7B1113] text-white shadow-sm'
-                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    {r === 'parent' ? 'Parent' : 'Instructor'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || passwordMismatch}
-              className="w-full bg-[#7B1113] text-white py-3 rounded-xl font-semibold hover:bg-[#6a0f10] active:bg-[#5e0d0f] disabled:opacity-50 shadow-sm cursor-pointer text-sm mt-1"
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24" aria-hidden>
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                  Creating account…
-                </span>
-              ) : 'Create Account'}
-            </button>
-          </form>
-
-          <p className="text-center text-sm text-slate-500 mt-6">
-            Already have an account?{' '}
-            <Link href="/login" className="text-[#7B1113] font-semibold hover:underline">
-              Sign in
-            </Link>
-          </p>
+      {/* Main content */}
+      <div style={{ padding: 44, overflow: 'auto' }}>
+        {/* Mobile logo */}
+        <div className="md:hidden mb-8">
+          <ITLogo size={18} color="var(--ice-deep)" />
         </div>
+
+        {/* Step 1: Role selection */}
+        {step === 1 && (
+          <>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Step 1 of 3</div>
+            <h1 className="font-display" style={{ fontSize: 36, fontWeight: 400, marginBottom: 6, color: 'var(--ink)' }}>
+              Who&apos;s this account for?
+            </h1>
+            <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 28, maxWidth: 460 }}>
+              Pick the role that fits — you can add skaters and link family members in the next steps.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, maxWidth: 640 }}>
+              {/* Parent card */}
+              <button
+                type="button"
+                onClick={() => setRole('parent')}
+                className="card text-left cursor-pointer"
+                style={{
+                  padding: 22, position: 'relative', minHeight: 220, display: 'flex', flexDirection: 'column',
+                  borderColor: role === 'parent' ? 'var(--ice)' : undefined,
+                  boxShadow: role === 'parent' ? '0 0 0 3px rgba(59,130,196,0.13), 0 1px 0 rgba(12,26,43,0.04), 0 8px 28px -8px rgba(30,90,145,0.18)' : undefined,
+                }}
+              >
+                {role === 'parent' && (
+                  <div style={{ position: 'absolute', top: 14, right: 14, width: 22, height: 22, borderRadius: '50%', background: '#3b82c4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <IconCheck size={12} color="#fff" />
+                  </div>
+                )}
+                <div style={{ position: 'relative', zIndex: 1, width: 50, height: 50, borderRadius: 14, background: role === 'parent' ? 'var(--ice-soft)' : 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, border: '1px solid var(--hairline)' }}>
+                  <IconUsers size={22} color={role === 'parent' ? 'var(--ice-deep)' : 'var(--ink-soft)'} />
+                </div>
+                <h3 className="font-display" style={{ position: 'relative', zIndex: 1, fontSize: 20, fontWeight: 500, marginBottom: 4, color: 'var(--ink)' }}>I&apos;m a parent</h3>
+                <p style={{ position: 'relative', zIndex: 1, fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.5, maxWidth: 360 }}>
+                  Enroll your child, follow their skill progress, and stay on top of show practices.
+                </p>
+                <div style={{ flex: 1, minHeight: 28 }} aria-hidden />
+              </button>
+
+              {/* Instructor card */}
+              <button
+                type="button"
+                onClick={() => setRole('instructor')}
+                className="card text-left cursor-pointer"
+                style={{
+                  padding: 22, position: 'relative', minHeight: 220, display: 'flex', flexDirection: 'column',
+                  borderColor: role === 'instructor' ? 'var(--ice)' : undefined,
+                  boxShadow: role === 'instructor' ? '0 0 0 3px rgba(59,130,196,0.13), 0 1px 0 rgba(12,26,43,0.04), 0 8px 28px -8px rgba(30,90,145,0.18)' : undefined,
+                }}
+              >
+                {role === 'instructor' && (
+                  <div style={{ position: 'absolute', top: 14, right: 14, width: 22, height: 22, borderRadius: '50%', background: '#3b82c4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <IconCheck size={12} color="#fff" />
+                  </div>
+                )}
+                <div style={{ position: 'relative', zIndex: 1, width: 50, height: 50, borderRadius: 14, background: role === 'instructor' ? 'var(--ice-soft)' : 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, border: '1px solid var(--hairline)' }}>
+                  <IconStar size={22} color={role === 'instructor' ? 'var(--ice-deep)' : 'var(--ink-soft)'} />
+                </div>
+                <h3 className="font-display" style={{ position: 'relative', zIndex: 1, fontSize: 20, fontWeight: 500, marginBottom: 4, color: 'var(--ink)' }}>I&apos;m an instructor</h3>
+                <p style={{ position: 'relative', zIndex: 1, fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.5, maxWidth: 360 }}>
+                  Take attendance, mark skill passes, and manage your weekly classes from the rink.
+                </p>
+                <div style={{ flex: 1, minHeight: 28 }} aria-hidden />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 36, maxWidth: 640 }}>
+              <p style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
+                Already have an account?{' '}
+                <Link href="/login" style={{ color: 'var(--ice)', fontWeight: 500, textDecoration: 'none' }}>Sign in</Link>
+              </p>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="inline-flex items-center gap-1.5 cursor-pointer min-h-[44px] rounded-md border border-[#3b82c4] bg-[#3b82c4] px-5 text-sm font-medium text-white shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)] hover:bg-[#2f74b3]"
+              >
+                Continue <IconArrowRight size={14} color="#fff" />
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Step 2: Details form */}
+        {step === 2 && !success && (
+          <>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Step 2 of 3</div>
+            <h1 className="font-display" style={{ fontSize: 36, fontWeight: 400, marginBottom: 6, color: 'var(--ink)' }}>
+              Your details
+            </h1>
+            <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 28, maxWidth: 460 }}>
+              {role === 'parent'
+                ? 'Create your parent account — you\'ll add your skaters next.'
+                : 'Set up your instructor account to start managing classes.'}
+            </p>
+
+            {error && (
+              <div className="flex items-start gap-2.5 rounded-lg p-3.5 mb-6 text-sm" style={{ background: 'var(--rust-soft)', border: '1px solid var(--rust)', color: '#8b3a25', maxWidth: 460 }}>
+                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleRegister} style={{ maxWidth: 460 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)', marginBottom: 6, display: 'block' }}>Full name</label>
+                  <input
+                    type="text" required value={fullName}
+                    onChange={e => setFullName(e.target.value)}
+                    placeholder="Jane Smith"
+                    style={{
+                      width: '100%', fontSize: 14, padding: '10px 12px', borderRadius: 'var(--r-sm)',
+                      border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink)',
+                      outline: 'none', fontFamily: 'inherit',
+                    }}
+                    onFocus={e => { e.target.style.borderColor = 'var(--ice)'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,196,0.13)'; }}
+                    onBlur={e => { e.target.style.borderColor = 'var(--hairline)'; e.target.style.boxShadow = 'none'; }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)', marginBottom: 6, display: 'block' }}>Email</label>
+                  <input
+                    type="email" required value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="jane@example.com"
+                    style={{
+                      width: '100%', fontSize: 14, padding: '10px 12px', borderRadius: 'var(--r-sm)',
+                      border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink)',
+                      outline: 'none', fontFamily: 'inherit',
+                    }}
+                    onFocus={e => { e.target.style.borderColor = 'var(--ice)'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,196,0.13)'; }}
+                    onBlur={e => { e.target.style.borderColor = 'var(--hairline)'; e.target.style.boxShadow = 'none'; }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)', marginBottom: 6, display: 'block' }}>Password</label>
+                  <input
+                    type="password" required minLength={6} value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="At least 6 characters"
+                    style={{
+                      width: '100%', fontSize: 14, padding: '10px 12px', borderRadius: 'var(--r-sm)',
+                      border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink)',
+                      outline: 'none', fontFamily: 'inherit',
+                    }}
+                    onFocus={e => { e.target.style.borderColor = 'var(--ice)'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,196,0.13)'; }}
+                    onBlur={e => { e.target.style.borderColor = 'var(--hairline)'; e.target.style.boxShadow = 'none'; }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)', marginBottom: 6, display: 'block' }}>Confirm password</label>
+                  <input
+                    type="password" required value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter your password"
+                    style={{
+                      width: '100%', fontSize: 14, padding: '10px 12px', borderRadius: 'var(--r-sm)',
+                      border: `1px solid ${passwordMismatch ? 'var(--rust)' : 'var(--hairline)'}`,
+                      background: passwordMismatch ? 'var(--rust-soft)' : 'var(--surface)', color: 'var(--ink)',
+                      outline: 'none', fontFamily: 'inherit',
+                    }}
+                    onFocus={e => { if (!passwordMismatch) { e.target.style.borderColor = 'var(--ice)'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,196,0.13)'; } }}
+                    onBlur={e => { if (!passwordMismatch) { e.target.style.borderColor = 'var(--hairline)'; e.target.style.boxShadow = 'none'; } }}
+                  />
+                  {passwordMismatch && (
+                    <p style={{ color: 'var(--rust)', fontSize: 12, marginTop: 4 }}>Passwords do not match</p>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 28 }}>
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="cursor-pointer"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 500, fontSize: 13,
+                    padding: '8px 14px', borderRadius: 'var(--r-sm)', border: '1px solid var(--hairline)',
+                    background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit',
+                  }}
+                >
+                  ← Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || passwordMismatch}
+                  className="inline-flex items-center gap-1.5 min-h-[44px] cursor-pointer rounded-md border border-[#3b82c4] bg-[#3b82c4] px-5 text-sm font-medium text-white shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)] hover:bg-[#2f74b3] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loading ? (
+                    <>
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24" aria-hidden>
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Creating account…
+                    </>
+                  ) : (
+                    <>Create account <IconArrowRight size={14} color="#fff" /></>
+                  )}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
+
+        {/* Step 3: Verify email / success */}
+        {step === 3 && success && (
+          <div style={{ maxWidth: 400 }}>
+            <div style={{ width: 56, height: 56, borderRadius: 14, background: 'var(--spring-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+              <IconCheck size={24} color="var(--spring)" />
+            </div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Step 3 of 3</div>
+            <h1 className="font-display" style={{ fontSize: 36, fontWeight: 400, marginBottom: 6, color: 'var(--ink)' }}>
+              Check your email
+            </h1>
+            <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 28, lineHeight: 1.6 }}>
+              We sent a confirmation link to <strong style={{ color: 'var(--ink)' }}>{email}</strong>. Click it to verify your account, then sign in.
+            </p>
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-1.5 min-h-[44px] rounded-md border border-[#3b82c4] bg-[#3b82c4] px-5 text-sm font-medium text-white no-underline shadow-[0_1px_0_#1e5a9155,0_4px_12px_-4px_rgba(59,130,196,0.33)] hover:bg-[#2f74b3]"
+            >
+              Go to sign in <IconArrowRight size={14} color="#fff" />
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   )

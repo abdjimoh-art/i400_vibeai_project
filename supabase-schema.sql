@@ -26,15 +26,26 @@ create policy "Users can update own profile"
   on public.profiles for update
   using (auth.uid() = id);
 
+-- Helper: admin check without RLS recursion (see supabase-reset.sql)
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+set row_security = off
+as $$
+  select coalesce(
+    (select role = 'admin' from public.profiles where id = auth.uid()),
+    false
+  );
+$$;
+grant execute on function public.is_admin() to anon, authenticated, service_role;
+
 -- Admins can view all profiles
 create policy "Admins can view all profiles"
   on public.profiles for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Allow insert during registration — role restricted to non-admin values
 -- Prevents a malicious user from intercepting the request and setting role = 'admin'
@@ -65,12 +76,7 @@ create policy "Anyone authenticated can view levels"
 
 create policy "Only admins can manage levels"
   on public.levels for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Seed levels data
 insert into public.levels (name, order_index) values
@@ -102,9 +108,7 @@ alter table public.classes enable row level security;
 
 create policy "Admins can manage all classes"
   on public.classes for all
-  using (
-    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
-  );
+  using (public.is_admin());
 
 create policy "Instructors can view their classes"
   on public.classes for select
@@ -115,6 +119,25 @@ create policy "Parents can view all classes"
   using (
     exists (select 1 from public.profiles where id = auth.uid() and role = 'parent')
   );
+
+create table public.class_instructors (
+  id uuid default gen_random_uuid() primary key,
+  class_id uuid not null references public.classes(id) on delete cascade,
+  instructor_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamp with time zone default now(),
+  unique(class_id, instructor_id)
+);
+
+alter table public.class_instructors enable row level security;
+
+create policy "Admins can manage class instructors"
+  on public.class_instructors for all
+  using (public.is_admin())
+  with check (public.is_admin());
+
+create policy "Instructors can view their class mappings"
+  on public.class_instructors for select
+  using (instructor_id = auth.uid());
 
 
 -- ============================================================

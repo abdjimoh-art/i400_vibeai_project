@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 type Profile = { id: string; full_name: string; role: string }
 type Skater = {
@@ -11,11 +12,11 @@ type Skater = {
 }
 type Enrollment = {
   id: string; class_id: string
-  class: { id: string; day_of_week: string; time_slot: string; ice_location: string; levels: { name: string } }
+  class: { id: string; day_of_week: string; time_slot: string; ice_location: string; levels: { name: string }; profiles: { full_name: string } | null }
 }
 type AttendanceRecord = { id: string; class_id: string; skater_id: string; session_date: string; present: boolean }
 type Skill = { id: string; name: string; passing_standard: string | null; order_index: number }
-type SkillCompletion = { id: string; skill_id: string; completed_date: string }
+type SkillCompletion = { id: string; skill_id: string; completed_date: string; skater_id?: string; skill?: { id: string; name: string } }
 type Show = {
   id: string; name: string; theme: string | null; show_date: string; show_time: string | null; location: string | null
   groups: ShowGroup[]
@@ -26,64 +27,56 @@ type ShowGroup = {
   practices: { id: string; practice_date: string; start_time: string; end_time: string; label: string | null }[]
 }
 
-// — SVG Icons —
-const IconSnowflake = () => (
-  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/>
-    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/>
-    <polyline points="9 5 12 2 15 5"/><polyline points="9 19 12 22 15 19"/>
-    <polyline points="5 9 2 12 5 15"/><polyline points="19 9 22 12 19 15"/>
-  </svg>
-)
-const IconSignOut = () => (
-  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-    <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-  </svg>
-)
-const IconCheck = () => (
-  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <polyline points="20 6 9 17 4 12"/>
-  </svg>
-)
-const IconCalendar = () => (
-  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>
-    <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-  </svg>
-)
-const IconDownload = () => (
-  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-    <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-  </svg>
-)
-
-function getLevelBadge(name: string) {
-  const n = (name || '').toLowerCase()
-  if (n.includes('tot')) return 'bg-pink-50 text-pink-700 border-pink-200'
-  if (n.includes('pre-alpha') || n.includes('pre alpha')) return 'bg-emerald-50 text-emerald-700 border-emerald-200'
-  if (n.includes('alpha')) return 'bg-amber-50 text-amber-700 border-amber-200'
-  if (n.includes('beta')) return 'bg-violet-50 text-violet-700 border-violet-200'
-  if (n.includes('gamma')) return 'bg-rose-50 text-rose-700 border-rose-200'
-  if (n.includes('delta')) return 'bg-cyan-50 text-cyan-700 border-cyan-200'
-  if (n.includes('freestyle')) return 'bg-slate-800 text-white border-slate-700'
-  if (n.includes('basic')) return 'bg-blue-50 text-blue-700 border-blue-200'
-  return 'bg-slate-100 text-slate-600 border-slate-200'
+/* — IceTrack logo mark — */
+function ITLogo({ size = 15, color = '#0c1a2b' }: { size?: number; color?: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      <svg width={size + 4} height={size + 4} viewBox="0 0 28 28" fill="none" aria-hidden>
+        <path d="M5 19 Q 14 22, 23 19" stroke={color} strokeWidth="2" strokeLinecap="round" />
+        <path d="M9 19 L 12 8 L 14 8 L 13 19" stroke={color} strokeWidth="1.6" fill="none" strokeLinejoin="round" />
+        <circle cx="6" cy="20" r="1.2" fill={color} />
+        <circle cx="22" cy="20" r="1.2" fill={color} />
+      </svg>
+      <span className="font-display" style={{ fontWeight: 500, fontSize: size + 4, letterSpacing: '-0.02em', color }}>
+        Ice<span style={{ fontStyle: 'italic', fontWeight: 400 }}>Track</span>
+      </span>
+    </span>
+  )
 }
 
-function getInitials(name: string) {
-  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+/* — Avatar orb seeded by name — */
+function ITAvatar({ name = '', size = 40, hue }: { name?: string; size?: number; hue?: number }) {
+  const initials = name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?'
+  const h = hue ?? ((name.charCodeAt(0) || 200) % 360)
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%', flexShrink: 0,
+      background: `radial-gradient(circle at 30% 30%, hsl(${h} 35% 92%), hsl(${(h + 20) % 360} 30% 80%))`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: `hsl(${h} 30% 30%)`, fontWeight: 600, fontSize: size * 0.34,
+      border: '1px solid var(--hairline)',
+    }}>{initials}</div>
+  )
 }
 
-const avatarColors = [
-  'bg-pink-100 text-pink-700',
-  'bg-blue-100 text-blue-700',
-  'bg-amber-100 text-amber-700',
-  'bg-violet-100 text-violet-700',
-  'bg-emerald-100 text-emerald-700',
-  'bg-orange-100 text-orange-700',
-]
+/* — Icons — */
+const I = {
+  home: () => <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11 L 12 3 L 21 11" /><path d="M5 10 V 20 H 19 V 10" /></svg>,
+  skater: () => <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="7" r="3" /><path d="M5 21 V 18 a 4 4 0 0 1 4 -4 h 6 a 4 4 0 0 1 4 4 V 21" /></svg>,
+  cal: () => <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>,
+  star: () => <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>,
+  show: () => <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4 H 20 V 16 H 13 L 12 19 L 11 16 H 4 Z" /></svg>,
+  bell: () => <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M18 16 V 11 a 6 6 0 0 0 -12 0 V 16 L 4 18 H 20 Z" /><path d="M10 22 a 2 2 0 0 0 4 0" /></svg>,
+  search: () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21 L 16 16" /></svg>,
+  plus: () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>,
+  arrowRight: () => <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12 H 19 M 13 6 L 19 12 L 13 18" /></svg>,
+  chevron: () => <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>,
+  pin: () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22 S 4 14 4 9 a 8 8 0 0 1 16 0 c 0 5 -8 13 -8 13 z" /><circle cx="12" cy="9" r="2.5" /></svg>,
+  users: () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="9" r="3.5" /><path d="M2 20 V 18 a 4 4 0 0 1 4 -4 h 6 a 4 4 0 0 1 4 4 V 20" /><circle cx="17" cy="8" r="2.5" /><path d="M22 18 a 3 3 0 0 0 -3 -3" /></svg>,
+  check: () => <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>,
+  download: () => <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>,
+  logout: () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 4 H 5 V 20 H 14" /><path d="M10 12 H 21 M 17 8 L 21 12 L 17 16" /></svg>,
+}
 
 export default function ParentDashboard() {
   const router = useRouter()
@@ -92,16 +85,13 @@ export default function ParentDashboard() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [skaters, setSkaters] = useState<Skater[]>([])
-  const [selectedSkaterId, setSelectedSkaterId] = useState('')
-
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([])
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
-  const [skills, setSkills] = useState<Skill[]>([])
-  const [completions, setCompletions] = useState<SkillCompletion[]>([])
+  const [skaterEnrollments, setSkaterEnrollments] = useState<Record<string, Enrollment[]>>({})
+  const [skaterAttendance, setSkaterAttendance] = useState<Record<string, AttendanceRecord[]>>({})
+  const [skaterSkills, setSkaterSkills] = useState<Record<string, Skill[]>>({})
+  const [skaterCompletions, setSkaterCompletions] = useState<Record<string, SkillCompletion[]>>({})
+  const [recentPasses, setRecentPasses] = useState<Array<{ skater: Skater; skill: string; date: string }>>([])
   const [shows, setShows] = useState<Show[]>([])
-  const [skaterView, setSkaterView] = useState<'classes' | 'skills' | 'show'>('classes')
-
-  useEffect(() => { load() }, [])
+  const [activeNav, setActiveNav] = useState<'overview' | 'skaters' | 'schedule' | 'journeys' | 'show' | 'notifications'>('overview')
 
   async function load() {
     setLoading(true)
@@ -114,60 +104,77 @@ export default function ParentDashboard() {
     setProfile(prof)
 
     const skatersRes = await fetch('/api/skaters')
-    if (skatersRes.ok) {
-      const allSkaters: (Skater & { parent: { id: string } | null })[] = await skatersRes.json()
-      const myKids = allSkaters.filter(s => s.parent?.id === user.id)
-      setSkaters(myKids)
-      if (myKids.length > 0) selectSkater(myKids[0].id, myKids[0].level?.id)
-    }
+    if (!skatersRes.ok) { setLoading(false); return }
+    const allSkaters: (Skater & { parent: { id: string } | null })[] = await skatersRes.json()
+    const myKids = allSkaters.filter(s => s.parent?.id === user.id)
+    setSkaters(myKids)
 
     const showsRes = await fetch('/api/skating-shows')
     if (showsRes.ok) setShows(await showsRes.json())
 
-    setLoading(false)
-  }
-
-  async function selectSkater(skaterId: string, levelId?: string) {
-    setSelectedSkaterId(skaterId)
-    setSkaterView('classes')
+    const enrollmentsByKid: Record<string, Enrollment[]> = {}
+    const attendanceByKid: Record<string, AttendanceRecord[]> = {}
+    const skillsByKid: Record<string, Skill[]> = {}
+    const completionsByKid: Record<string, SkillCompletion[]> = {}
+    const passes: Array<{ skater: Skater; skill: string; date: string }> = []
 
     const { data: allClasses } = await supabase
       .from('classes')
-      .select('id, day_of_week, time_slot, ice_location, levels(name)')
+      .select('id, day_of_week, time_slot, ice_location, levels(name), profiles(full_name)')
 
-    const enrolledClasses: Enrollment[] = []
-    const allAttendance: AttendanceRecord[] = []
+    for (const kid of myKids) {
+      enrollmentsByKid[kid.id] = []
+      attendanceByKid[kid.id] = []
+      skillsByKid[kid.id] = []
+      completionsByKid[kid.id] = []
 
-    if (allClasses) {
-      for (const cls of allClasses) {
-        const res = await fetch(`/api/enrollments?class_id=${cls.id}`)
-        if (res.ok) {
-          const enrs = await res.json()
-          const match = enrs.find((e: { skater_id: string }) => e.skater_id === skaterId)
-          if (match) {
-            enrolledClasses.push({ id: match.id, class_id: cls.id, class: cls as unknown as Enrollment['class'] })
-            const attRes = await fetch(`/api/attendance?class_id=${cls.id}`)
-            if (attRes.ok) {
-              const attRecords: AttendanceRecord[] = await attRes.json()
-              allAttendance.push(...attRecords.filter(a => a.skater_id === skaterId))
-            }
+      if (allClasses) {
+        for (const cls of allClasses) {
+          const enRes = await fetch(`/api/enrollments?class_id=${cls.id}`)
+          if (!enRes.ok) continue
+          const enrs: Array<{ id: string; skater_id: string }> = await enRes.json()
+          const match = enrs.find(e => e.skater_id === kid.id)
+          if (!match) continue
+          enrollmentsByKid[kid.id].push({ id: match.id, class_id: cls.id, class: cls as unknown as Enrollment['class'] })
+          const attRes = await fetch(`/api/attendance?class_id=${cls.id}`)
+          if (attRes.ok) {
+            const attRecords: AttendanceRecord[] = await attRes.json()
+            attendanceByKid[kid.id].push(...attRecords.filter(a => a.skater_id === kid.id))
+          }
+        }
+      }
+
+      if (kid.level?.id) {
+        const [skillsRes, compRes] = await Promise.all([
+          fetch(`/api/skills?level_id=${kid.level.id}`),
+          fetch(`/api/skill-completions?skater_id=${kid.id}`),
+        ])
+        if (skillsRes.ok) skillsByKid[kid.id] = await skillsRes.json()
+        if (compRes.ok) {
+          const comps: SkillCompletion[] = await compRes.json()
+          completionsByKid[kid.id] = comps
+          for (const c of comps) {
+            const skill = skillsByKid[kid.id].find(s => s.id === c.skill_id) || (c.skill as Skill | undefined)
+            if (skill) passes.push({ skater: kid, skill: skill.name, date: c.completed_date })
           }
         }
       }
     }
 
-    setEnrollments(enrolledClasses)
-    setAttendance(allAttendance)
+    setSkaterEnrollments(enrollmentsByKid)
+    setSkaterAttendance(attendanceByKid)
+    setSkaterSkills(skillsByKid)
+    setSkaterCompletions(completionsByKid)
+    passes.sort((a, b) => b.date.localeCompare(a.date))
+    setRecentPasses(passes.slice(0, 4))
 
-    if (levelId) {
-      const [skillsRes, compRes] = await Promise.all([
-        fetch(`/api/skills?level_id=${levelId}`),
-        fetch(`/api/skill-completions?skater_id=${skaterId}`),
-      ])
-      if (skillsRes.ok) setSkills(await skillsRes.json())
-      if (compRes.ok) setCompletions(await compRes.json())
-    }
+    setLoading(false)
   }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial dashboard load only
+  }, [])
 
   function generateICS(show: Show, group: ShowGroup) {
     let ics = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//IceTrack//EN\n'
@@ -197,324 +204,418 @@ export default function ParentDashboard() {
   async function handleLogout() { await supabase.auth.signOut(); router.push('/login') }
 
   if (loading) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--paper)' }}>
       <div className="flex flex-col items-center gap-4">
-        <svg className="animate-spin w-8 h-8 text-[#7B1113]" fill="none" viewBox="0 0 24 24" aria-hidden>
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        <svg className="animate-spin w-8 h-8" style={{ color: 'var(--ice)' }} fill="none" viewBox="0 0 24 24" aria-hidden>
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
-        <p className="text-slate-500 text-sm font-medium">Loading your dashboard…</p>
+        <p style={{ color: 'var(--muted)', fontSize: 13 }}>Loading your dashboard…</p>
       </div>
     </div>
   )
 
-  const selectedSkater = skaters.find(s => s.id === selectedSkaterId)
-  const completedIds = new Set(completions.map(c => c.skill_id))
-  const completionPct = skills.length > 0 ? Math.round((completions.length / skills.length) * 100) : 0
-  const skaterShows = selectedSkater?.level ? shows.filter(show =>
-    show.groups?.some(g => g.levels?.some(gl => gl.level?.id === selectedSkater.level?.id))
-  ) : []
+  const firstName = (profile?.full_name || 'there').split(' ')[0]
+  const totalUpcoming = Object.values(skaterEnrollments).reduce((acc, arr) => acc + arr.length, 0)
+  const upcomingShow = shows.length > 0 ? shows[0] : null
+  const upcomingGroup = upcomingShow?.groups?.find(g =>
+    g.levels?.some(gl => skaters.some(k => k.level?.id === gl.level?.id))
+  )
+  const scheduleRows = skaters.flatMap(s =>
+    (skaterEnrollments[s.id] || []).map(en => ({
+      skaterId: s.id,
+      skaterName: s.full_name,
+      levelName: s.level?.name || 'No level',
+      cls: en.class,
+    }))
+  )
+
+  const navItems = [
+    { id: 'overview' as const, l: 'Overview', icon: I.home },
+    { id: 'skaters' as const, l: 'My skaters', icon: I.skater },
+    { id: 'schedule' as const, l: 'Schedule', icon: I.cal },
+    { id: 'journeys' as const, l: 'Skill journeys', icon: I.star },
+    { id: 'show' as const, l: 'Spring show', icon: I.show },
+    { id: 'notifications' as const, l: 'Notifications', icon: I.bell, badge: recentPasses.length || undefined },
+  ]
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Nav */}
-      <nav className="bg-[#7B1113] text-white px-6 py-4 flex justify-between items-center shadow-md">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-white/15 rounded-lg flex items-center justify-center flex-shrink-0">
-            <IconSnowflake />
+    <div className="min-h-screen" style={{ background: 'var(--paper)', display: 'grid', gridTemplateColumns: '224px 1fr' }}>
+      {/* — Sidebar — */}
+      <aside style={{ background: 'var(--surface)', borderRight: '1px solid var(--hairline)', padding: 20, display: 'flex', flexDirection: 'column' }}>
+        <ITLogo size={15} />
+        <nav style={{ marginTop: 28, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {navItems.map(n => {
+            const active = activeNav === n.id
+            const Icon = n.icon
+            return (
+              <button
+                key={n.id}
+                onClick={() => setActiveNav(n.id)}
+                className="cursor-pointer text-left"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 10px', borderRadius: 'var(--r-sm)',
+                  background: active ? 'var(--ice-soft)' : 'transparent',
+                  color: active ? 'var(--ice-deep)' : 'var(--ink-soft)',
+                  fontSize: 13, fontWeight: active ? 500 : 400,
+                  border: 'none', fontFamily: 'inherit',
+                }}
+              >
+                <span style={{ color: active ? 'var(--ice-deep)' : 'var(--muted)', display: 'inline-flex' }}><Icon /></span>
+                <span style={{ flex: 1 }}>{n.l}</span>
+                {n.badge ? <span className="pill pill-crimson" style={{ fontSize: 10, padding: '1px 6px' }}>{n.badge}</span> : null}
+              </button>
+            )
+          })}
+        </nav>
+
+        <div style={{ marginTop: 'auto', padding: 12, borderRadius: 'var(--r-md)', background: 'var(--surface2)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ITAvatar name={profile?.full_name || ''} size={32} hue={210} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 500 }}>{profile?.full_name}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>Parent · {skaters.length} skater{skaters.length !== 1 ? 's' : ''}</div>
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="font-bold text-base tracking-tight">IceTrack</span>
-            <span className="text-xs text-red-200 font-medium px-2 py-0.5 bg-white/10 rounded-full">Parent</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-red-100 font-medium hidden sm:block">{profile?.full_name}</span>
-          <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg font-medium cursor-pointer">
-            <IconSignOut />
-            <span className="hidden sm:inline">Sign out</span>
+          <button onClick={handleLogout} aria-label="Sign out" className="cursor-pointer" style={{ width: 28, height: 28, borderRadius: 'var(--r-sm)', background: 'var(--surface)', border: '1px solid var(--hairline)', color: 'var(--ink-soft)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <I.logout />
           </button>
         </div>
-      </nav>
+      </aside>
 
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        {/* Welcome */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6 flex items-center justify-between">
+      {/* — Main — */}
+      <main style={{ overflow: 'auto', padding: 28 }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, marginBottom: 22 }}>
           <div>
-            <p className="text-sm text-slate-500 font-medium">Welcome back</p>
-            <h2 className="text-xl font-bold text-slate-900 mt-0.5">{profile?.full_name}</h2>
-            <p className="text-sm text-slate-500 mt-1">Frank Southern Ice Arena</p>
+            <div className="eyebrow">Spring 2026 · Week 8</div>
+            <h1 className="font-display" style={{ fontSize: 40, fontWeight: 400, marginTop: 6, color: 'var(--ink)', lineHeight: 1 }}>
+              Hi <span style={{ fontStyle: 'italic' }}>{firstName}.</span>
+            </h1>
+            <p style={{ fontSize: 14, color: 'var(--muted)', marginTop: 6 }}>
+              {skaters.length === 0
+                ? 'No skaters linked yet — contact the admin to add your child.'
+                : `${skaters.length} skater${skaters.length !== 1 ? 's' : ''}, ${totalUpcoming} class${totalUpcoming !== 1 ? 'es' : ''}, ${recentPasses.length} skill${recentPasses.length !== 1 ? 's' : ''} in motion.`}
+            </p>
           </div>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-            Parent
-          </span>
-        </div>
+          <div className="flex gap-2">
+            <button className="cursor-pointer flex items-center gap-1.5" style={{ padding: '8px 14px', fontSize: 13, fontWeight: 500, borderRadius: 'var(--r-sm)', border: '1px solid var(--hairline)', background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit' }}>
+              <span style={{ color: 'var(--muted)' }}><I.search /></span> Search
+            </button>
+            <button
+              type="button"
+              disabled
+              title="Skaters are linked by admin"
+              className="it-btn-primary cursor-not-allowed flex items-center gap-1.5"
+              style={{ padding: '8px 14px', fontSize: 13, fontWeight: 500, borderRadius: 'var(--r-sm)', fontFamily: 'inherit' }}
+            >
+              <I.plus /> Add skater
+            </button>
+          </div>
+        </header>
 
-        {/* Children Selector */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
-          <h3 className="text-base font-bold text-slate-900 mb-4">My Children</h3>
-          {skaters.length === 0 ? (
-            <div className="flex items-start gap-3 text-slate-500 text-sm bg-slate-50 rounded-xl p-4 border border-slate-200">
-              <svg className="w-5 h-5 mt-0.5 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-              </svg>
-              <p>No children linked to your account yet. Contact the admin to add your children.</p>
+        {/* — Overview / Skaters — */}
+        {(activeNav === 'overview' || activeNav === 'skaters') && (skaters.length === 0 ? (
+          <div className="card" style={{ padding: 28, textAlign: 'center' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 'var(--r-md)', background: 'var(--ice-soft)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ice-deep)', marginBottom: 14 }}>
+              <I.skater />
             </div>
-          ) : (
-            <div className="flex flex-wrap gap-3">
-              {skaters.map((s, idx) => (
-                <button key={s.id} onClick={() => selectSkater(s.id, s.level?.id)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition cursor-pointer ${
-                    selectedSkaterId === s.id
-                      ? 'border-[#7B1113] bg-red-50 shadow-sm'
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                  }`}>
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${avatarColors[idx % avatarColors.length]}`}>
-                    {getInitials(s.full_name)}
+            <h3 className="font-display" style={{ fontSize: 22, fontWeight: 400 }}>No skaters yet</h3>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>
+              Contact the admin to link your skaters to your account.
+            </p>
+            <p className="font-mono" style={{ fontSize: 12, color: 'var(--ice-deep)', marginTop: 6 }}>icetrack@iu.edu</p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: skaters.length === 1 ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 22 }}>
+            {skaters.map((s, idx) => {
+              const enrolls = skaterEnrollments[s.id] || []
+              const completions = skaterCompletions[s.id] || []
+              const skills = skaterSkills[s.id] || []
+              const passed = completions.length
+              const total = skills.length
+              const pct = total ? Math.round((passed / total) * 100) : 0
+              const nextClass = enrolls[0]?.class
+              const lastPass = completions
+                .map(c => ({ c, skill: skills.find(sk => sk.id === c.skill_id) }))
+                .filter(x => x.skill)
+                .sort((a, b) => b.c.completed_date.localeCompare(a.c.completed_date))[0]
+              const hue = (s.full_name.charCodeAt(0) || 200) * (idx + 1) % 360
+              return (
+                <div key={s.id} className="card" style={{ padding: 20 }}>
+                  <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 16 }}>
+                    <ITAvatar name={s.full_name} size={56} hue={hue} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h2 className="font-display" style={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)' }}>{s.full_name.split(' ')[0]}</h2>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                        <span className="pill pill-ice">{s.level?.name || 'No level'}</span>
+                      </div>
+                    </div>
+                    <Link
+                      href={`/parent/journey/${s.id}`}
+                      aria-label="Open skill journey"
+                      className="cursor-pointer"
+                      style={{
+                        width: 32, height: 32, borderRadius: 'var(--r-sm)',
+                        border: '1px solid var(--hairline)', background: 'var(--surface)',
+                        color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <I.chevron />
+                    </Link>
                   </div>
-                  <div className="text-left">
-                    <p className={`text-sm font-semibold ${selectedSkaterId === s.id ? 'text-[#7B1113]' : 'text-slate-900'}`}>{s.full_name}</p>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border mt-0.5 ${getLevelBadge(s.level?.name || '')}`}>
-                      {s.level?.name || 'No level'}
+
+                  {total > 0 && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                        <span style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 500 }}>Skill progress</span>
+                        <span className="font-mono" style={{ fontSize: 12, color: 'var(--ink)' }}>
+                          <strong>{passed}</strong>/{total} <span style={{ color: 'var(--muted)' }}>· {pct}%</span>
+                        </span>
+                      </div>
+                      <div className="progress-bar"><span style={{ width: `${pct}%` }} /></div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: 12, background: 'var(--surface2)', borderRadius: 'var(--r-md)' }}>
+                    <div>
+                      <div className="eyebrow" style={{ marginBottom: 4 }}>Next class</div>
+                      {nextClass ? (
+                        <>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{nextClass.day_of_week} · {nextClass.time_slot}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{nextClass.profiles?.full_name || nextClass.ice_location}</div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>No class enrolled</div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="eyebrow" style={{ marginBottom: 4 }}>Last passed</div>
+                      {lastPass?.skill ? (
+                        <>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--crimson)' }}>{lastPass.skill.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{new Date(lastPass.c.completed_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>—</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Class attendance row */}
+                  {enrolls.length > 0 && (
+                    <div style={{ marginTop: 14 }}>
+                      <div className="eyebrow" style={{ marginBottom: 6 }}>Recent attendance</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(skaterAttendance[s.id] || [])
+                          .slice()
+                          .sort((a, b) => b.session_date.localeCompare(a.session_date))
+                          .slice(0, 6)
+                          .map(a => (
+                            <span
+                              key={a.id || a.session_date}
+                              className="font-mono"
+                              style={{
+                                fontSize: 11, padding: '2px 8px', borderRadius: 999,
+                                background: a.present ? 'var(--spring-soft)' : 'var(--rust-soft)',
+                                color: a.present ? 'var(--spring)' : 'var(--rust)',
+                                border: `1px solid ${a.present ? 'rgba(58,154,118,0.2)' : 'rgba(198,107,74,0.25)'}`,
+                              }}
+                            >
+                              {new Date(a.session_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+
+        {/* — Overview extras — */}
+        {activeNav === 'overview' && skaters.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 14 }}>
+            <div className="card" style={{ padding: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+                <h3 className="font-display" style={{ fontSize: 18, fontWeight: 500 }}>Recent skill passes</h3>
+                {skaters.length > 0 && (
+                  <Link href={`/parent/journey/${skaters[0].id}`} style={{ fontSize: 12, color: 'var(--ice)', textDecoration: 'none' }}>View all →</Link>
+                )}
+              </div>
+              {recentPasses.length === 0 ? (
+                <p style={{ fontSize: 13, color: 'var(--muted)', padding: '14px 0' }}>
+                  No skill passes yet. Coach updates will show here.
+                </p>
+              ) : (
+                recentPasses.map((r, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: i < recentPasses.length - 1 ? '1px solid var(--hairline-soft)' : 'none' }}>
+                    <ITAvatar name={r.skater.full_name} size={32} hue={(r.skater.full_name.charCodeAt(0) || 200) % 360} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: 'var(--ink)' }}>
+                        <strong style={{ fontWeight: 600 }}>{r.skater.full_name.split(' ')[0]}</strong> passed{' '}
+                        <span style={{ color: 'var(--crimson)', fontWeight: 500 }}>{r.skill}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{r.skater.level?.name || 'No level'}</div>
+                    </div>
+                    {i === 0 && <span className="pill pill-crimson" style={{ fontSize: 10 }}>NEW</span>}
+                    <span className="font-mono" style={{ fontSize: 11, color: 'var(--muted)', minWidth: 50, textAlign: 'right' }}>
+                      {new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
                   </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Skater Detail */}
-        {selectedSkater && (
-          <>
-            {/* View tabs */}
-            <div className="flex gap-1 mb-5 bg-white rounded-2xl border border-slate-200 shadow-sm p-1.5">
-              <button onClick={() => setSkaterView('classes')}
-                className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-semibold transition cursor-pointer ${skaterView === 'classes' ? 'bg-[#7B1113] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
-                Classes & Attendance
-              </button>
-              <button onClick={() => setSkaterView('skills')}
-                className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-semibold transition cursor-pointer ${skaterView === 'skills' ? 'bg-[#7B1113] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
-                Skill Card
-              </button>
-              {skaterShows.length > 0 && (
-                <button onClick={() => setSkaterView('show')}
-                  className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-semibold transition cursor-pointer ${skaterView === 'show' ? 'bg-[#7B1113] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
-                  Skating Show
-                </button>
+                ))
               )}
             </div>
 
-            {/* CLASSES & ATTENDANCE */}
-            {skaterView === 'classes' && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-5 border-b border-slate-100">
-                  <h3 className="text-lg font-bold text-slate-900">{selectedSkater.full_name} — Classes</h3>
-                  <p className="text-sm text-slate-500 mt-0.5">{enrollments.length} class{enrollments.length !== 1 ? 'es' : ''} enrolled</p>
-                </div>
-                <div className="p-6">
-                  {enrollments.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
-                        <IconCalendar />
+            {/* Spring showcase teaser */}
+            <div className="card" style={{ padding: 0, overflow: 'hidden', background: 'linear-gradient(160deg, var(--ice-deep), var(--ice))', color: '#fff', position: 'relative', border: 'none' }}>
+              <svg style={{ position: 'absolute', inset: 0, opacity: 0.15 }} viewBox="0 0 300 400" preserveAspectRatio="none" aria-hidden>
+                <circle cx="240" cy="60" r="30" stroke="#fff" fill="none" />
+                <circle cx="240" cy="60" r="50" stroke="#fff" fill="none" />
+                <path d="M-20 320 Q 100 240, 220 290 T 400 270" stroke="#fff" strokeWidth="1.2" fill="none" />
+              </svg>
+              <div style={{ padding: 22, position: 'relative' }}>
+                <div className="eyebrow" style={{ color: 'rgba(255,255,255,0.75)' }}>Spring showcase</div>
+                {upcomingShow ? (
+                  <>
+                    <h3 className="font-display" style={{ fontSize: 24, color: '#fff', fontWeight: 400, marginTop: 6 }}>
+                      {upcomingShow.theme ? (
+                        <>{upcomingShow.theme.split(' ').slice(0, -1).join(' ')} <span style={{ fontStyle: 'italic' }}>{upcomingShow.theme.split(' ').slice(-1)[0]}</span></>
+                      ) : (
+                        <>{upcomingShow.name}</>
+                      )}
+                    </h3>
+                    <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <I.cal /> {new Date(upcomingShow.show_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}{upcomingShow.show_time ? ` · ${upcomingShow.show_time}` : ''}
                       </div>
-                      <p className="text-slate-600 font-semibold text-sm">No classes enrolled</p>
-                      <p className="text-slate-400 text-xs mt-1">Ask the admin to enroll your child in a class.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {enrollments.map(en => {
-                        const classAttendance = attendance.filter(a => a.class_id === en.class_id).sort((a, b) => a.session_date.localeCompare(b.session_date))
-                        const presentCount = classAttendance.filter(a => a.present).length
-                        const attPct = classAttendance.length > 0 ? Math.round((presentCount / classAttendance.length) * 100) : 0
-                        return (
-                          <div key={en.id} className="border border-slate-200 rounded-2xl overflow-hidden">
-                            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${getLevelBadge(en.class.levels.name)}`}>
-                                    {en.class.levels.name}
-                                  </span>
-                                  <span className="text-sm text-slate-600 font-medium">{en.class.day_of_week} · {en.class.time_slot}</span>
-                                  <span className="text-xs text-slate-400">{en.class.ice_location}</span>
-                                </div>
-                                <div className="text-right">
-                                  <p className="text-sm font-bold text-slate-900">{attPct}%</p>
-                                  <p className="text-xs text-slate-400">{presentCount}/{classAttendance.length} sessions</p>
-                                </div>
-                              </div>
-                              {classAttendance.length > 0 && (
-                                <div className="mt-3 w-full bg-slate-200 rounded-full h-1.5">
-                                  <div className={`h-1.5 rounded-full transition-all ${attPct >= 80 ? 'bg-green-500' : attPct >= 60 ? 'bg-amber-500' : 'bg-red-400'}`} style={{ width: `${attPct}%` }} />
-                                </div>
-                              )}
-                            </div>
-                            {classAttendance.length > 0 && (
-                              <div className="px-5 py-3">
-                                <div className="flex flex-wrap gap-1.5">
-                                  {classAttendance.map(a => (
-                                    <span key={a.id || a.session_date}
-                                      className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
-                                        a.present ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'
-                                      }`}>
-                                      {a.present ? <IconCheck /> : <span className="w-2 h-0.5 bg-current rounded-full" />}
-                                      {new Date(a.session_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* SKILL CARD */}
-            {skaterView === 'skills' && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-5 border-b border-slate-100">
-                  <div className="flex items-center gap-3 mb-5">
-                    <div className="w-12 h-12 rounded-full bg-[#7B1113]/10 flex items-center justify-center text-[#7B1113] font-bold text-lg">
-                      {getInitials(selectedSkater.full_name)}
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-slate-900">{selectedSkater.full_name}</h3>
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border mt-1 ${getLevelBadge(selectedSkater.level?.name || '')}`}>
-                        {selectedSkater.level?.name || 'Unknown Level'}
-                      </span>
-                    </div>
-                  </div>
-                  {/* Big progress display */}
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-700">Skill Progress</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{completions.length} of {skills.length} skills completed</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-3xl font-bold text-[#7B1113]">{completionPct}<span className="text-lg">%</span></p>
-                      </div>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-3">
-                      <div
-                        className="bg-gradient-to-r from-[#7B1113] to-red-400 h-3 rounded-full transition-all duration-700"
-                        style={{ width: `${completionPct}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="p-6">
-                  {skills.length === 0 ? (
-                    <p className="text-slate-400 text-sm text-center py-8">No skills defined for this level.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {skills.map(skill => {
-                        const done = completedIds.has(skill.id)
-                        const completion = completions.find(c => c.skill_id === skill.id)
-                        return (
-                          <div key={skill.id}
-                            className={`flex items-center gap-4 p-4 rounded-xl border ${
-                              done ? 'bg-green-50 border-green-200' : 'bg-white border-slate-200'
-                            }`}>
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                              done ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-500'
-                            }`}>
-                              {done ? <IconCheck /> : skill.order_index}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-semibold ${done ? 'text-green-800' : 'text-slate-800'}`}>{skill.name}</p>
-                              {skill.passing_standard && <p className="text-xs text-slate-500 mt-0.5 truncate">{skill.passing_standard}</p>}
-                            </div>
-                            {done && completion && (
-                              <span className="text-xs text-green-700 font-medium flex-shrink-0 bg-green-100 px-2.5 py-1 rounded-lg border border-green-200">
-                                {new Date(completion.completed_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              </span>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* SKATING SHOW */}
-            {skaterView === 'show' && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-5 border-b border-slate-100">
-                  <h3 className="text-lg font-bold text-slate-900">{selectedSkater.full_name} — Skating Shows</h3>
-                  <p className="text-sm text-slate-500 mt-0.5">{skaterShows.length} show{skaterShows.length !== 1 ? 's' : ''} with your child&apos;s level</p>
-                </div>
-                <div className="p-6 space-y-4">
-                  {skaterShows.map(show => {
-                    const relevantGroups = show.groups?.filter(g =>
-                      g.levels?.some(gl => gl.level?.id === selectedSkater.level?.id)
-                    ) || []
-                    return (
-                      <div key={show.id} className="border border-slate-200 rounded-2xl overflow-hidden">
-                        {/* Show header */}
-                        <div className="px-5 py-4 bg-gradient-to-r from-slate-50 to-red-50 border-b border-slate-200">
-                          <h4 className="font-bold text-slate-900">{show.name}</h4>
-                          <div className="flex flex-wrap items-center gap-2 mt-2">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                              <IconCalendar />
-                              {new Date(show.show_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                              {show.show_time ? ` at ${show.show_time}` : ''}
-                            </span>
-                            {show.location && <span className="text-xs text-slate-500">· {show.location}</span>}
-                            {show.theme && <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">Theme: {show.theme}</span>}
-                          </div>
+                      {upcomingShow.location && (
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <I.pin /> {upcomingShow.location}
                         </div>
-                        <div className="p-5 space-y-3">
-                          {relevantGroups.map(g => (
-                            <div key={g.id} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold text-slate-800 text-sm">{g.name}</span>
-                                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">{g.show_half}</span>
-                                </div>
-                                <button onClick={() => generateICS(show, g)}
-                                  className="flex items-center gap-1.5 text-[#7B1113] hover:text-[#6a0f10] text-xs font-semibold hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition cursor-pointer border border-red-200">
-                                  <IconDownload />
-                                  Add to Calendar
-                                </button>
-                              </div>
-                              {g.practices && g.practices.length > 0 && (
-                                <>
-                                  <p className="text-xs font-semibold text-slate-600 mb-2">Practice Schedule</p>
-                                  <div className="space-y-1.5">
-                                    {g.practices
-                                      .sort((a, b) => a.practice_date.localeCompare(b.practice_date))
-                                      .map(p => (
-                                        <div key={p.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 text-xs border border-slate-200">
-                                          <div className="flex items-center gap-2 text-slate-700 font-medium">
-                                            <IconCalendar />
-                                            {new Date(p.practice_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                                          </div>
-                                          <span className="text-slate-500">{p.start_time}–{p.end_time}{p.label && ` (${p.label})`}</span>
-                                        </div>
-                                      ))}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          ))}
+                      )}
+                      {upcomingGroup && (
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <I.users /> {upcomingGroup.name}
                         </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                      )}
+                    </div>
+                    {upcomingGroup && (
+                      <button
+                        onClick={() => generateICS(upcomingShow, upcomingGroup)}
+                        className="cursor-pointer"
+                        style={{
+                          marginTop: 16, display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '8px 14px', borderRadius: 'var(--r-sm)', background: '#fff',
+                          color: 'var(--ice-deep)', border: '1px solid #fff',
+                          fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
+                        }}
+                      >
+                        <I.download /> Practice schedule
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <h3 className="font-display" style={{ fontSize: 22, color: '#fff', fontWeight: 400, marginTop: 6 }}>
+                      No upcoming <span style={{ fontStyle: 'italic' }}>show</span>
+                    </h3>
+                    <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 8 }}>
+                      The next showcase will appear here once it&apos;s scheduled by the admin.
+                    </p>
+                  </>
+                )}
               </div>
-            )}
-          </>
+            </div>
+          </div>
         )}
-      </div>
+
+        {/* — Schedule — */}
+        {activeNav === 'schedule' && (
+          <div className="card" style={{ padding: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+              <h3 className="font-display" style={{ fontSize: 22, fontWeight: 500 }}>Class schedule</h3>
+              <span className="pill">{scheduleRows.length}</span>
+            </div>
+            {scheduleRows.length === 0 ? (
+              <p style={{ fontSize: 14, color: 'var(--muted)' }}>No class sessions are linked to your skaters yet.</p>
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                {scheduleRows.map((row, idx) => (
+                  <div key={`${row.skaterId}-${row.cls.id}-${idx}`} style={{ border: '1px solid var(--hairline)', borderRadius: 'var(--r-md)', background: 'var(--surface2)', padding: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{row.cls.day_of_week} · {row.cls.time_slot}</div>
+                      <span className="pill pill-ice">{row.levelName}</span>
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--muted)' }}>
+                      {row.skaterName} · {row.cls.ice_location} · {row.cls.profiles?.full_name || 'Instructor TBD'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* — Skill journeys — */}
+        {activeNav === 'journeys' && (
+          <div className="card" style={{ padding: 20 }}>
+            <h3 className="font-display" style={{ fontSize: 22, fontWeight: 500, marginBottom: 14 }}>Skill journeys</h3>
+            {skaters.length === 0 ? (
+              <p style={{ fontSize: 14, color: 'var(--muted)' }}>No skaters linked yet.</p>
+            ) : (
+              <div style={{ display: 'grid', gap: 10 }}>
+                {skaters.map(s => (
+                  <Link key={s.id} href={`/parent/journey/${s.id}`} className="card" style={{ textDecoration: 'none', padding: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 14, color: 'var(--ink)' }}>{s.full_name}</span>
+                    <span style={{ color: 'var(--ice-deep)', fontSize: 13, fontWeight: 500 }}>Open journey →</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* — Spring show — */}
+        {activeNav === 'show' && (
+          <div className="card" style={{ padding: 20 }}>
+            <h3 className="font-display" style={{ fontSize: 22, fontWeight: 500, marginBottom: 14 }}>Spring show</h3>
+            {!upcomingShow ? (
+              <p style={{ fontSize: 14, color: 'var(--muted)' }}>No upcoming showcase has been published yet.</p>
+            ) : (
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)' }}>{upcomingShow.name}</div>
+                <div style={{ marginTop: 6, fontSize: 13, color: 'var(--muted)' }}>
+                  {upcomingShow.show_date}{upcomingShow.show_time ? ` · ${upcomingShow.show_time}` : ''}{upcomingShow.location ? ` · ${upcomingShow.location}` : ''}
+                </div>
+                {upcomingGroup ? (
+                  <button onClick={() => generateICS(upcomingShow, upcomingGroup)} className="it-btn-primary cursor-pointer" style={{ marginTop: 14, padding: '8px 14px', borderRadius: 'var(--r-sm)', fontSize: 13, fontWeight: 500 }}>
+                    Download practice schedule
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* — Notifications — */}
+        {activeNav === 'notifications' && (
+          <div className="card" style={{ padding: 20 }}>
+            <h3 className="font-display" style={{ fontSize: 22, fontWeight: 500, marginBottom: 14 }}>Notifications</h3>
+            {recentPasses.length === 0 ? (
+              <p style={{ fontSize: 14, color: 'var(--muted)' }}>No notifications yet.</p>
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                {recentPasses.map((r, i) => (
+                  <div key={`${r.skater.id}-${r.date}-${i}`} style={{ border: '1px solid var(--hairline)', borderRadius: 'var(--r-md)', background: 'var(--surface2)', padding: 12, fontSize: 13, color: 'var(--ink)' }}>
+                    <strong style={{ fontWeight: 600 }}>{r.skater.full_name}</strong> passed <span style={{ color: 'var(--crimson)', fontWeight: 500 }}>{r.skill}</span>
+                    <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 12 }}>{new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
     </div>
   )
 }

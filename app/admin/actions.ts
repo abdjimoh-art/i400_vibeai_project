@@ -10,7 +10,7 @@ const VALID_LOCATIONS = ['Zone A', 'Zone B', 'Zone C', 'Zone D', 'Center Ice']
 export async function upsertClass(
   payload: {
     levelId: string
-    instructorId: string
+    instructorIds: string[]
     day: string
     time: string
     location: string
@@ -26,25 +26,42 @@ export async function upsertClass(
   if (profile?.role !== 'admin') return { error: 'Forbidden' }
 
   if (!isValidUuid(payload.levelId)) return { error: 'Invalid level' }
-  if (payload.instructorId && !isValidUuid(payload.instructorId)) return { error: 'Invalid instructor' }
+  if (!Array.isArray(payload.instructorIds) || payload.instructorIds.length === 0) return { error: 'At least one instructor is required' }
+  if (payload.instructorIds.some((id) => !isValidUuid(id))) return { error: 'Invalid instructor selection' }
   if (!VALID_DAYS.includes(payload.day)) return { error: 'Invalid day of week' }
   if (!VALID_LOCATIONS.includes(payload.location)) return { error: 'Invalid ice location' }
   const timeSlot = payload.time?.trim().slice(0, 20)
   if (!timeSlot) return { error: 'Time slot is required' }
 
+  const primaryInstructorId = payload.instructorIds[0]
   const data = {
     level_id: payload.levelId,
-    instructor_id: payload.instructorId || null,
+    instructor_id: primaryInstructorId,
     day_of_week: payload.day,
     time_slot: timeSlot,
     ice_location: payload.location,
   }
 
-  const { error } = payload.editId
-    ? await supabase.from('classes').update(data).eq('id', payload.editId)
-    : await supabase.from('classes').insert(data)
+  let classId = payload.editId
+  const { error, data: classRows } = payload.editId
+    ? await supabase.from('classes').update(data).eq('id', payload.editId).select('id')
+    : await supabase.from('classes').insert(data).select('id')
 
   if (error) return { error: error.message }
+  if (!classId) classId = classRows?.[0]?.id
+  if (!classId) return { error: 'Failed to resolve class id' }
+
+  // Keep supplemental instructor assignments in sync when the mapping table exists.
+  const { error: wipeError } = await supabase.from('class_instructors').delete().eq('class_id', classId)
+  if (wipeError && !wipeError.message.toLowerCase().includes('relation "public.class_instructors" does not exist')) {
+    return { error: wipeError.message }
+  }
+  if (!wipeError) {
+    const rows = payload.instructorIds.map((instructorId) => ({ class_id: classId, instructor_id: instructorId }))
+    const { error: mapError } = await supabase.from('class_instructors').insert(rows)
+    if (mapError) return { error: mapError.message }
+  }
+
   revalidatePath('/admin/dashboard')
   return {}
 }
