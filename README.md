@@ -17,7 +17,8 @@ IceTrack is a full-stack web application for managing a skating school (Frank So
 
 ## Demo Video
 
-- Standalone demo (MP4): [Watch IceTrack demo](docs/videos/ice-track-demo.mp4)
+- Standalone demo (MP4, GitHub.com): [Watch IceTrack demo](docs/videos/ice-track-demo.mp4)
+- Direct download/play fallback (GitHub.iu): [IceTrack demo MP4](https://github.iu.edu/I400sp25Vibe/ice_skating_fullstack/raw/skatingshow-abdjimoh/docs/videos/ice-track-demo.mp4)
 
 ---
 
