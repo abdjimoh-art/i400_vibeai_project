@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>IceTrack — Wireframes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #f0eee9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    #root { width: 100%; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="wireframe-primitives.jsx"></script>
+  <script type="text/babel" src="screens-auth.jsx"></script>
+  <script type="text/babel" src="screens-parent.jsx"></script>
+  <script type="text/babel" src="screens-instructor.jsx"></script>
+  <script type="text/babel" src="screens-admin.jsx"></script>
+  <script type="text/babel" src="screens-skills.jsx"></script>
+  <script type="text/babel" src="screens-show-marketing.jsx"></script>
+
+  <script type="text/babel" data-presets="react">
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "theme": "ice",
+      "density": "cozy",
+      "show_callouts": true
+    }/*EDITMODE-END*/;
+
+    function App() {
+      const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+      const themeClass = `wf-theme-${tweaks.theme}`;
+      const densityClass = `wf-density-${tweaks.density}`;
+
+      // hide callouts via CSS
+      React.useEffect(() => {
+        let style = document.getElementById('wf-callout-toggle');
+        if (!style) {
+          style = document.createElement('style');
+          style.id = 'wf-callout-toggle';
+          document.head.appendChild(style);
+        }
+        style.textContent = tweaks.show_callouts ? '' : '.wf-callout { display: none !important; }';
+      }, [tweaks.show_callouts]);
+
+      return (
+        <div className={`${themeClass} ${densityClass}`} style={{ width: '100%', height: '100%' }}>
+          <DesignCanvas>
+            <DCSection id="auth" title="Auth — Login & Register" subtitle="2 directions each · low-fi structural exploration">
+              <DCArtboard id="login-v1" label="A · Login — centered card" width={760} height={500}>
+                <AuthLoginV1 />
+              </DCArtboard>
+              <DCArtboard id="login-v2" label="B · Login — split brand hero" width={760} height={500}>
+                <AuthLoginV2 />
+              </DCArtboard>
+              <DCArtboard id="register-v1" label="A · Register — single card" width={760} height={560}>
+                <AuthRegisterV1 />
+              </DCArtboard>
+              <DCArtboard id="register-v2" label="B · Register — multi-step / role-first" width={760} height={560}>
+                <AuthRegisterV2 />
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="parent" title="Parent dashboard" subtitle="Warm, family-friendly. Photo placeholders for real skater shots later.">
+              <DCArtboard id="parent-v1" label="A · Skater cards (warm, photo-forward)" width={920} height={620}>
+                <ParentDashV1 />
+              </DCArtboard>
+              <DCArtboard id="parent-v2" label="B · Activity timeline (scannable)" width={920} height={620}>
+                <ParentDashV2 />
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="instructor" title="Instructor dashboard" subtitle="Tablet-first for rink-side use; desktop overview as alternate.">
+              <DCArtboard id="instructor-v1" label="A · Tablet · Today's roster (big tap targets)" width={900} height={620}>
+                <InstructorDashV1 />
+              </DCArtboard>
+              <DCArtboard id="instructor-v2" label="B · Desktop · class list overview" width={900} height={620}>
+                <InstructorDashV2 />
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="admin" title="Admin dashboard" subtitle="CRUD-first vs KPI overview.">
+              <DCArtboard id="admin-v1" label="A · Class management (CRUD-first)" width={920} height={640}>
+                <AdminDashV1 />
+              </DCArtboard>
+              <DCArtboard id="admin-v2" label="B · KPI overview + drill-in" width={920} height={640}>
+                <AdminDashV2 />
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="skills" title="Skill tracker (the +1 feature)" subtitle="Two angles on the same data: instructor checklist vs parent celebration.">
+              <DCArtboard id="skills-v1" label="A · Instructor · skater + skill checklist" width={960} height={640}>
+                <SkillTrackerV1 />
+              </DCArtboard>
+              <DCArtboard id="skills-v2" label="B · Parent · level journey + milestones" width={960} height={680}>
+                <SkillTrackerV2 />
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="show" title="Skating show & practice schedule" subtitle="Admin-side planning + parent-side mobile reminder view.">
+              <DCArtboard id="show-v1" label="A · Admin · groups + practice calendar" width={920} height={640}>
+                <ShowScheduleV1 />
+              </DCArtboard>
+              <DCArtboard id="show-v2" label="B · Parent · mobile schedule" width={360} height={640}>
+                <ShowScheduleV2 />
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="marketing" title="Marketing landing page" subtitle="Two voices for the same product story.">
+              <DCArtboard id="marketing-v1" label="A · Hero w/ stacked moments" width={1000} height={620}>
+                <MarketingV1 />
+              </DCArtboard>
+              <DCArtboard id="marketing-v2" label="B · Editorial / magazine" width={1000} height={620}>
+                <MarketingV2 />
+              </DCArtboard>
+            </DCSection>
+          </DesignCanvas>
+
+          <TweaksPanel title="Tweaks">
+            <TweakSection title="Theme">
+              <TweakRadio
+                label="Accent color"
+                value={tweaks.theme}
+                onChange={v => setTweak('theme', v)}
+                options={[
+                  { value: 'crimson', label: 'IU crimson' },
+                  { value: 'ice', label: 'Icy blue' },
+                  { value: 'warm', label: 'Warm tan' },
+                ]}
+              />
+              <TweakRadio
+                label="Density"
+                value={tweaks.density}
+                onChange={v => setTweak('density', v)}
+                options={[
+                  { value: 'cozy', label: 'Cozy' },
+                  { value: 'compact', label: 'Compact' },
+                ]}
+              />
+              <TweakToggle
+                label="Show callouts"
+                value={tweaks.show_callouts}
+                onChange={v => setTweak('show_callouts', v)}
+              />
+            </TweakSection>
+            <TweakSection title="About">
+              <div style={{ fontSize: 12, color: '#666', lineHeight: 1.4 }}>
+                Low-fi wireframes for IceTrack — the I400 skating school admin app. 7 screens × 2 variations each.
+                Pan/zoom the canvas; click any artboard's expand icon to focus it fullscreen.
+              </div>
+            </TweakSection>
+          </TweaksPanel>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

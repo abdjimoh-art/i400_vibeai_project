@@ -224,3 +224,85 @@ FROM levels l,
   (7, 'Two-foot spin', 'Optional entry, minimum of four revolutions')
 ) AS s(idx, name, passing_standard)
 WHERE l.name = 'Level 5';
+
+-- ============================================================
+-- SEED: 2026 Spring Ice Show (shifted to current timeline)
+-- Source: "Italian Ice: a tribute to the Milano-Cortina Olympics"
+-- ============================================================
+
+-- Keep seed idempotent for repeated local resets.
+DELETE FROM show_practices;
+DELETE FROM show_group_levels;
+DELETE FROM show_groups;
+DELETE FROM skating_shows;
+
+WITH new_show AS (
+  INSERT INTO skating_shows (name, theme, show_date, show_time, location)
+  VALUES (
+    '2026 Skating School Spring Ice Show',
+    'Italian Ice: a tribute to the Milano-Cortina Olympics',
+    '2026-05-14',
+    '18:30',
+    'Frank Southern Ice Arena · Zone A'
+  )
+  RETURNING id
+),
+new_groups AS (
+  INSERT INTO show_groups (show_id, name, show_half)
+  SELECT ns.id, g.name, g.show_half
+  FROM new_show ns
+  CROSS JOIN (
+    VALUES
+      ('Group 1 — All Tots + Level 3', 'First Half'),
+      ('Group 2 — Level 2 + Level 5 + Levels 6/7', 'First Half'),
+      ('Group 3 — Level 1 + Level 4', 'Second Half'),
+      ('Group 4 — Adults + Level 8/Figure Skating', 'Second Half')
+  ) AS g(name, show_half)
+  RETURNING id, name
+)
+INSERT INTO show_practices (show_id, group_id, practice_date, start_time, end_time, label)
+SELECT
+  ns.id,
+  ng.id,
+  p.practice_date,
+  p.start_time::time,
+  p.end_time::time,
+  p.label
+FROM new_show ns
+JOIN new_groups ng ON TRUE
+JOIN (
+  VALUES
+    -- Mon May 4
+    ('Group 1 — All Tots + Level 3', '2026-05-04', '17:00', '17:45', 'Group 1 practice'),
+    ('Group 2 — Level 2 + Level 5 + Levels 6/7', '2026-05-04', '17:45', '18:30', 'Group 2 practice'),
+    -- Tue May 5
+    ('Group 3 — Level 1 + Level 4', '2026-05-05', '17:00', '17:45', 'Group 3 practice'),
+    ('Group 4 — Adults + Level 8/Figure Skating', '2026-05-05', '17:45', '18:30', 'Group 4 practice'),
+    -- Thu May 7
+    ('Group 1 — All Tots + Level 3', '2026-05-07', '18:15', '18:55', 'Week 8 + Group 1'),
+    ('Group 2 — Level 2 + Level 5 + Levels 6/7', '2026-05-07', '18:55', '19:30', 'Week 8 + Group 2'),
+    -- Fri May 8
+    ('Group 3 — Level 1 + Level 4', '2026-05-08', '17:45', '18:30', 'Week 8 + Group 3'),
+    ('Group 4 — Adults + Level 8/Figure Skating', '2026-05-08', '18:30', '19:15', 'Week 8 + Group 4'),
+    -- Sun May 10 (all groups)
+    ('Group 1 — All Tots + Level 3', '2026-05-10', '10:00', '10:45', 'Sunday full-cast practice'),
+    ('Group 2 — Level 2 + Level 5 + Levels 6/7', '2026-05-10', '10:45', '11:30', 'Sunday full-cast practice'),
+    ('Group 3 — Level 1 + Level 4', '2026-05-10', '11:30', '12:15', 'Sunday full-cast practice'),
+    ('Group 4 — Adults + Level 8/Figure Skating', '2026-05-10', '12:15', '13:00', 'Sunday full-cast practice'),
+    -- Mon/Tue of show week
+    ('Group 1 — All Tots + Level 3', '2026-05-11', '17:00', '17:45', 'Final week tune-up'),
+    ('Group 2 — Level 2 + Level 5 + Levels 6/7', '2026-05-11', '17:45', '18:30', 'Final week tune-up'),
+    ('Group 3 — Level 1 + Level 4', '2026-05-12', '17:00', '17:45', 'Final week tune-up'),
+    ('Group 4 — Adults + Level 8/Figure Skating', '2026-05-12', '17:45', '18:30', 'Final week tune-up'),
+    -- Wed May 13 rehearsal blocks
+    ('Group 1 — All Tots + Level 3', '2026-05-13', '17:00', '18:00', 'Rehearsal: Groups 1 & 2'),
+    ('Group 2 — Level 2 + Level 5 + Levels 6/7', '2026-05-13', '17:00', '18:00', 'Rehearsal: Groups 1 & 2'),
+    ('Group 3 — Level 1 + Level 4', '2026-05-13', '18:00', '19:00', 'Rehearsal: Groups 3 & 4'),
+    ('Group 4 — Adults + Level 8/Figure Skating', '2026-05-13', '18:00', '19:00', 'Rehearsal: Groups 3 & 4'),
+    -- Thu May 14 show-day call times
+    ('Group 1 — All Tots + Level 3', '2026-05-14', '17:45', '18:00', 'Show day: 1st half skaters arrive'),
+    ('Group 2 — Level 2 + Level 5 + Levels 6/7', '2026-05-14', '17:45', '18:00', 'Show day: 1st half skaters arrive'),
+    ('Group 3 — Level 1 + Level 4', '2026-05-14', '18:00', '18:15', 'Show day: 2nd half skaters arrive'),
+    ('Group 4 — Adults + Level 8/Figure Skating', '2026-05-14', '18:00', '18:15', 'Show day: 2nd half skaters arrive')
+) AS p(group_name, practice_date, start_time, end_time, label)
+  ON p.group_name = ng.name;
