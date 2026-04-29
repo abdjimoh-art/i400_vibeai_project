@@ -17,12 +17,7 @@ IceTrack is a full-stack web application for managing a skating school (Frank So
 
 ## Demo Video
 
-<!-- After recording, add a screenshot to docs/images/ and the video to docs/videos/, then update the link below -->
-<a href="docs/videos/icetrack-demo.mp4">
-  <img src="docs/images/icetrack-screenshot.png" alt="IceTrack Demo" width="600">
-</a>
-
-*Click the image above to watch the demo video.*
+- Standalone demo (MP4): [Watch IceTrack demo](docs/videos/ice-track-demo.mp4)
 
 ---
 
@@ -148,10 +143,6 @@ lib/supabase/
 
 middleware.ts             → Role checks for `/admin`, `/instructor`, `/parent` prefixes
 next.config.ts            → Short URLs `/admin` `/parent` `/instructor` → `/*/dashboard`
-
-supabase-reset.sql        → Full DB reset + seed (preferred)
-supabase-seed-demo-data.sql → Light refill when auth rows were recreated
-supabase-multi-instructor.sql → Adds class_instructors mapping for co-instructors
 .env.example              → Environment variable template
 ```
 
