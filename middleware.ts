@@ -33,6 +33,26 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
+  if (request.nextUrl.pathname.startsWith('/assistant')) {
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    const r = profile?.role
+    if (r !== 'admin' && r !== 'instructor' && r !== 'parent') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
+    return supabaseResponse
+  }
+
   for (const [prefix, requiredRole] of Object.entries(ROLE_ROUTES)) {
     if (request.nextUrl.pathname.startsWith(prefix)) {
       if (!user) {

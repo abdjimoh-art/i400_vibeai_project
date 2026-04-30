@@ -88,7 +88,10 @@ cp .env.example .env.local
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+GROQ_API_KEY=your-groq-api-key
 ```
+Optional: `GROQ_CHAT_MODEL` (default `llama-3.1-8b-instant`). See **IceTrack Assistant** below.
+
 > `.env.local` is gitignored and will never be committed.
 
 ### 5. Admin access & demo logins
@@ -128,6 +131,7 @@ app/
   auth/callback/          → Supabase auth callback
   api/
     auth/login/           → Password sign-in + profile bootstrap
+    rag/chat/             → RAG chat (Groq embeddings + chat; all roles, session auth)
     admin/overview/       → Admin-only aggregates (enrollment by level, show counts)
     skaters/              → Skater CRUD
     enrollments/          → Enrollment management
@@ -142,7 +146,8 @@ lib/supabase/
   client.ts               → Browser Supabase client
   server.ts               → Server Supabase client
 
-middleware.ts             → Role checks for `/admin`, `/instructor`, `/parent` prefixes
+assistant/                → IceTrack Assistant UI (RAG + Groq; all roles)
+middleware.ts             → Role checks for `/admin`, `/instructor`, `/parent`; `/assistant` for any app role
 next.config.ts            → Short URLs `/admin` `/parent` `/instructor` → `/*/dashboard`
 .env.example              → Environment variable template
 ```
@@ -173,6 +178,27 @@ npm test            # Watch mode
 
 ---
 
+## IceTrack Assistant (RAG + Groq)
+
+Signed-in **admin**, **instructor**, and **parent** users can open **IceTrack Assistant** from each dashboard or at **`/assistant`**. The feature is a small **retrieval-augmented** pipeline:
+
+1. **Retrieve** — The latest user question and every corpus chunk are embedded with Groq **`nomic-embed-text-v1.5`**. Top chunks by cosine similarity are selected.
+2. **Augment** — Those chunk texts are injected into the system prompt as `CONTEXT`.
+3. **Generate** — Groq **`llama-3.1-8b-instant`** (override with `GROQ_CHAT_MODEL`) completes the reply. The API returns `sources` (titles) for transparency.
+
+**Code:** `lib/rag/corpus.ts` (knowledge snippets), `lib/rag/corpus-embeddings.ts`, `app/api/rag/chat/route.ts`, `app/assistant/page.tsx`.
+
+**Local:** add `GROQ_API_KEY` to `.env.local` (see [Groq Console](https://console.groq.com/keys)).
+
+**Deploying to Indiana University GitHub (`github.iu.edu`)** — same as any Next host: push this repo, then configure **server-side** secrets where you run production (for example GitHub Actions → environment secrets, or your platform’s env UI). Required for the assistant:
+
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (unchanged)
+- **`GROQ_API_KEY`** (new; never expose as `NEXT_PUBLIC_*`)
+
+Optional: `GROQ_CHAT_MODEL` if your Groq account uses a different chat model id.
+
+---
+
 ## Phase Checklists
 
 ### Phase 1
@@ -193,3 +219,6 @@ npm test            # Watch mode
 - [x] ICS calendar export
 - [x] Security audit (3 vulnerabilities fixed — see SECURITY.md)
 - [x] Unit tests (Vitest + jsdom)
+
+### Extra credit — RAG + Groq
+- [x] Functional RAG (Groq `nomic-embed-text-v1.5` retrieval + Groq chat) with UI at `/assistant` and dashboard entry points for admin, instructor, and parent
