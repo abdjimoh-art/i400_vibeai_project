@@ -268,6 +268,19 @@ export default function ParentDashboard() {
               </button>
             )
           })}
+          <Link
+            href="/assistant"
+            className="mt-3 flex items-center gap-2 rounded-md text-left text-sm font-medium"
+            style={{
+              padding: '8px 10px',
+              color: 'var(--ice-deep)',
+              background: 'var(--ice-soft)',
+              border: '1px solid var(--ice)',
+              textDecoration: 'none',
+            }}
+          >
+            <span aria-hidden>✦</span> IceTrack Assistant
+          </Link>
         </nav>
 
         <div style={{ marginTop: 'auto', padding: 12, borderRadius: 'var(--r-md)', background: 'var(--surface2)', display: 'flex', alignItems: 'center', gap: 10 }}>

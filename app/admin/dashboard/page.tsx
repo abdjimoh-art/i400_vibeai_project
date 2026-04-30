@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { upsertClass, deleteClass } from '@/app/admin/actions'
@@ -424,6 +425,19 @@ export default function AdminDashboard() {
           <span className="font-display" style={{ fontSize: 19, fontWeight: 500, letterSpacing: '-0.02em' }}>Ice<span style={{ fontStyle: 'italic', fontWeight: 400 }}>Track</span></span>
         </span>
         <span className="pill pill-crimson">Admin</span>
+        <Link
+          href="/assistant"
+          className="ml-1 inline-flex items-center rounded-md text-sm font-medium cursor-pointer"
+          style={{
+            padding: '6px 10px',
+            border: '1px solid var(--ice)',
+            background: 'var(--ice-soft)',
+            color: 'var(--ice-deep)',
+            textDecoration: 'none',
+          }}
+        >
+          Assistant
+        </Link>
         <div className="flex flex-wrap gap-0.5 md:ml-2">
           {TABS.map(t => (
             <button key={t} onClick={() => { setTab(t); if (t === 'Enrollment' && enrollClassId) void loadEnrollments(enrollClassId) }}

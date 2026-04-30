@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -236,6 +237,20 @@ export default function InstructorDashboard() {
       <div className="flex items-center gap-3.5 px-5 py-3.5" style={{ background: 'var(--surface)', borderBottom: '1px solid var(--hairline)' }}>
         <ITLogo size={15} />
         <span className="pill pill-ice">Instructor</span>
+        <Link
+          href="/assistant"
+          className="text-sm font-medium rounded-md cursor-pointer"
+          style={{
+            marginLeft: 8,
+            padding: '5px 10px',
+            border: '1px solid var(--ice)',
+            background: 'var(--ice-soft)',
+            color: 'var(--ice-deep)',
+            textDecoration: 'none',
+          }}
+        >
+          Assistant
+        </Link>
         <div className="ml-auto flex items-center gap-3.5">
           <div className="flex items-center gap-1.5" style={{ fontSize: 12, color: 'var(--muted)' }}>
             <IconClock size={14} color="var(--muted)" />
